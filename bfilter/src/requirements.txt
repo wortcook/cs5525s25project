@@ -1,0 +1,10 @@
+python-dotenv
+numpy
+pandas
+scikit-learn
+Flask
+gunicorn
+requests
+google-auth
+joblib
+google-cloud-pubsub

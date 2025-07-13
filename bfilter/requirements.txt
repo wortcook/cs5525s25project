@@ -1,0 +1,6 @@
+Flask
+scikit-learn
+pandas
+requests
+google-auth
+joblib
