@@ -1,6 +1,6 @@
 variable "project" {
   description = "The project ID"
-  default     = "thomasjones-llm-project-2025"
+  default     = "cs5525s25"
 }
 
 variable "region" {
@@ -22,7 +22,7 @@ variable "secondary_model_name" {
 variable "secondary_model_location" {
   description = "The path within the GCS bucket where the secondary model is stored."
   type        = string
-  default     = "/storage/models/jailbreak-classifier"
+  default     = "/mnt/models/jailbreak-classifier"
 }
 
 variable "llm_stub_port" {

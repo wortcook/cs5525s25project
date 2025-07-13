@@ -7,8 +7,13 @@ terraform {
   }
 }
 
+variable "project_id" {
+  description = "The GCP project ID."
+  type        = string
+}
+
 resource "docker_image" "bfilter" {
-  name = "us-central1-docker.pkg.dev/thomasjones-llm-project-2025/llm-project/bfilter:latest"
+  name = "us-central1-docker.pkg.dev/${var.project_id}/llm-project/bfilter:latest"
   build {
     context = "./bfilter"
     tag = ["bfilter:latest"]
@@ -23,7 +28,7 @@ resource "docker_image" "bfilter" {
 resource "null_resource" "tag_image" {
   depends_on = [docker_image.bfilter]
   provisioner "local-exec" {
-    command = "docker tag bfilter ${docker_image.bfilter.name}"
+    command = "docker tag bfilter:latest ${docker_image.bfilter.name}"
   }
 }
 

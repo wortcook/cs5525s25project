@@ -20,6 +20,7 @@ data "google_project" "project" {
 resource "google_project_service" "project_apis" {
   project  = var.project
   for_each = toset([
+    "cloudresourcemanager.googleapis.com",
     "iam.googleapis.com",
     "run.googleapis.com",
     "compute.googleapis.com",
@@ -190,6 +191,20 @@ resource "null_resource" "model-download" {
   depends_on = [google_cloud_run_v2_job.model_downloader_job]
 }
 
+# Assuming your Artifact Registry repository is named "llm-project"
+# and is in the same project and region as specified in your variables.
+#  **Adapt the following to match the actual repository details if different.**
+resource "google_artifact_registry_repository_iam_member" "builder_push_access" {
+  project    = var.project
+  location   = var.region
+  repository = "llm-project"  # Replace with your actual repository name
+  role       = "roles/artifactregistry.writer"
+  # Replace with the actual service account email used by your build process.
+  # If it's in a module, you might need to output the service account email from the module.
+  member     = "serviceAccount:${google_service_account.model_downloader_sa.email}" # Adjust as needed!
+
+  depends_on = [google_project_service.project_apis]
+}
 ###############
 # SERVICE ACCOUNTS & PERMISSIONS
 ###############
@@ -265,6 +280,7 @@ module "llm-stub-build" {
 
 module "sfilter-build" {
   source       = "./sfilter"
+  project_id = var.project
 
   # Ensure Artifact Registry API is enabled before building/pushing images.
   depends_on = [google_project_service.project_apis]
@@ -273,6 +289,7 @@ module "sfilter-build" {
 
 module "bfilter-build" {
   source       = "./bfilter"
+  project_id = var.project
 
   # Ensure Artifact Registry API is enabled before building/pushing images.
   depends_on = [google_project_service.project_apis]
@@ -347,7 +364,7 @@ resource "google_cloud_run_v2_service" "sfilter-service" {
       
       env {
         name  = "SECONDARY_MODEL"
-        value = "/mnt/models/${var.secondary_model_name}"
+        value = var.secondary_model_location
       }
       env{
         name = "SFILTER_CONFIDENCE_THRESHOLD"
@@ -560,152 +577,110 @@ resource "google_pubsub_subscription" "secondary_filter_subscription" {
 }
 
 # Cloud Monitoring - Health Check Uptime Checks
-resource "google_monitoring_uptime_check_config" "bfilter_health_check" {
-  display_name = "BFilter Health Check"
-  timeout      = "10s"
-  period       = "60s"
+# resource "google_monitoring_uptime_check_config" "bfilter_health_check" {
+#   display_name = "BFilter Health Check"
+#   timeout      = "10s"
+#   period       = "60s"
 
-  http_check {
-    use_ssl         = true
-    path            = "/health"
-    port            = "443"
-    request_method  = "GET"
-  }
+#   synthetic_monitor {
+#     cloud_function_v2 {
+#       name = google_cloud_run_v2_service.bfilter-service.id
+#     }
+#   }
 
-  monitored_resource {
-    type = "uptime_url"
-    labels = {
-      project_id = var.project
-      host       = google_cloud_run_v2_service.bfilter-service.uri
-    }
-  }
+#   depends_on = [google_cloud_run_v2_service.bfilter-service]
+# }
 
-  content_matchers {
-    content = "healthy"
-    matcher = "CONTAINS_STRING"
-  }
+# resource "google_monitoring_uptime_check_config" "sfilter_health_check" {
+#   display_name = "SFilter Health Check"
+#   timeout      = "10s"
+#   period       = "60s"
 
-  depends_on = [google_cloud_run_v2_service.bfilter-service]
-}
+#   synthetic_monitor {
+#     cloud_function_v2 {
+#       name = google_cloud_run_v2_service.sfilter-service.id
+#     }
+#   }
 
-resource "google_monitoring_uptime_check_config" "sfilter_health_check" {
-  display_name = "SFilter Health Check"
-  timeout      = "10s"
-  period       = "60s"
+#   depends_on = [google_cloud_run_v2_service.sfilter-service]
+# }
 
-  http_check {
-    use_ssl         = true
-    path            = "/health"
-    port            = "443"
-    request_method  = "GET"
-  }
+# resource "google_monitoring_uptime_check_config" "llmstub_health_check" {
+#   display_name = "LLMStub Health Check"
+#   timeout      = "10s"
+#   period       = "60s"
 
-  monitored_resource {
-    type = "uptime_url"
-    labels = {
-      project_id = var.project
-      host       = google_cloud_run_v2_service.sfilter-service.uri
-    }
-  }
+#   synthetic_monitor {
+#     cloud_function_v2 {
+#       name = google_cloud_run_v2_service.llm-stub-service.id
+#     }
+#   }
 
-  content_matchers {
-    content = "healthy"
-    matcher = "CONTAINS_STRING"
-  }
-
-  depends_on = [google_cloud_run_v2_service.sfilter-service]
-}
-
-resource "google_monitoring_uptime_check_config" "llmstub_health_check" {
-  display_name = "LLMStub Health Check"
-  timeout      = "10s"
-  period       = "60s"
-
-  http_check {
-    use_ssl         = true
-    path            = "/health"
-    port            = "443"
-    request_method  = "GET"
-  }
-
-  monitored_resource {
-    type = "uptime_url"
-    labels = {
-      project_id = var.project
-      host       = google_cloud_run_v2_service.llm-stub-service.uri
-    }
-  }
-
-  content_matchers {
-    content = "healthy"
-    matcher = "CONTAINS_STRING"
-  }
-
-  depends_on = [google_cloud_run_v2_service.llm-stub-service]
-}
+#   depends_on = [google_cloud_run_v2_service.llm-stub-service]
+# }
 
 # Alert Policy for Service Health
-resource "google_monitoring_alert_policy" "service_health_alert" {
-  display_name = "LLM Infrastructure Service Health Alert"
-  combiner     = "OR"
+# resource "google_monitoring_alert_policy" "service_health_alert" {
+#   display_name = "LLM Infrastructure Service Health Alert"
+#   combiner     = "OR"
   
-  conditions {
-    display_name = "BFilter Service Down"
-    condition_threshold {
-      filter          = "metric.type=\"monitoring.googleapis.com/uptime_check/check_passed\" AND resource.type=\"uptime_url\""
-      duration        = "300s"
-      comparison      = "COMPARISON_EQUAL"
-      threshold_value = 0
+#   conditions {
+#     display_name = "BFilter Service Down"
+#     condition_threshold {
+#       filter          = "metric.type=\"monitoring.googleapis.com/uptime_check/check_passed\" AND resource.type=\"uptime_url\""
+#       duration        = "300s"
+#       comparison      = "COMPARISON_EQ"
+#       threshold_value = 0
       
-      aggregations {
-        alignment_period   = "60s"
-        per_series_aligner = "ALIGN_NEXT_OLDER"
-      }
-    }
-  }
+#       aggregations {
+#         alignment_period   = "60s"
+#         per_series_aligner = "ALIGN_NEXT_OLDER"
+#       }
+#     }
+#   }
 
-  conditions {
-    display_name = "SFilter Service Down"
-    condition_threshold {
-      filter          = "metric.type=\"monitoring.googleapis.com/uptime_check/check_passed\" AND resource.type=\"uptime_url\""
-      duration        = "300s"
-      comparison      = "COMPARISON_EQUAL"
-      threshold_value = 0
+#   conditions {
+#     display_name = "SFilter Service Down"
+#     condition_threshold {
+#       filter          = "metric.type=\"monitoring.googleapis.com/uptime_check/check_passed\" AND resource.type=\"uptime_url\""
+#       duration        = "300s"
+#       comparison      = "COMPARISON_EQ"
+#       threshold_value = 0
       
-      aggregations {
-        alignment_period   = "60s"
-        per_series_aligner = "ALIGN_NEXT_OLDER"
-      }
-    }
-  }
+#       aggregations {
+#         alignment_period   = "60s"
+#         per_series_aligner = "ALIGN_NEXT_OLDER"
+#       }
+#     }
+#   }
 
-  conditions {
-    display_name = "LLMStub Service Down"
-    condition_threshold {
-      filter          = "metric.type=\"monitoring.googleapis.com/uptime_check/check_passed\" AND resource.type=\"uptime_url\""
-      duration        = "300s"
-      comparison      = "COMPARISON_EQUAL"
-      threshold_value = 0
+#   conditions {
+#     display_name = "LLMStub Service Down"
+#     condition_threshold {
+#       filter          = "metric.type=\"monitoring.googleapis.com/uptime_check/check_passed\" AND resource.type=\"uptime_url\""
+#       duration        = "300s"
+#       comparison      = "COMPARISON_EQ"
+#       threshold_value = 0
       
-      aggregations {
-        alignment_period   = "60s"
-        per_series_aligner = "ALIGN_NEXT_OLDER"
-      }
-    }
-  }
+#       aggregations {
+#         alignment_period   = "60s"
+#         per_series_aligner = "ALIGN_NEXT_OLDER"
+#       }
+#     }
+#   }
 
-  notification_channels = [google_monitoring_notification_channel.email_alert.name]
+#   notification_channels = [google_monitoring_notification_channel.email_alert.name]
 
-  alert_strategy {
-    auto_close = "1800s"  # Auto-close after 30 minutes
-  }
+#   alert_strategy {
+#     auto_close = "1800s"  # Auto-close after 30 minutes
+#   }
 
-  depends_on = [
-    google_monitoring_uptime_check_config.bfilter_health_check,
-    google_monitoring_uptime_check_config.sfilter_health_check,
-    google_monitoring_uptime_check_config.llmstub_health_check
-  ]
-}
+#   depends_on = [
+#     google_monitoring_uptime_check_config.bfilter_health_check,
+#     google_monitoring_uptime_check_config.sfilter_health_check,
+#     google_monitoring_uptime_check_config.llmstub_health_check
+#   ]
+# }
 
 # Email notification channel (you'll need to replace with actual email)
 resource "google_monitoring_notification_channel" "email_alert" {
@@ -713,7 +688,7 @@ resource "google_monitoring_notification_channel" "email_alert" {
   type         = "email"
   
   labels = {
-    email_address = "admin@yourdomain.com"  # Replace with actual email
+    email_address = "wortcook@gmail.com"  # Replace with actual email
   }
   
   enabled = true

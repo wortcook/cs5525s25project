@@ -29,7 +29,7 @@ resource "docker_image" "llm-stub" {
 resource "null_resource" "tag_image" {
   depends_on = [docker_image.llm-stub]
   provisioner "local-exec" {
-    command = "docker tag llm-stub ${docker_image.llm-stub.name}"
+    command = "docker tag llm-stub:latest ${docker_image.llm-stub.name}"
   }
 }
 
