@@ -1,2 +1,2 @@
-huggingface_hub
-google-cloud-storage
+huggingface_hub==0.20.3
+google-cloud-storage==2.10.0

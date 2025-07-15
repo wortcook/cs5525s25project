@@ -391,3 +391,22 @@ The PermissionError persists even after changing to `/app/model` - now showing "
 - **Issue**: Docker WORKDIR doesn't automatically grant write permissions to non-root users
 - **Solution**: Explicitly create directories and set ownership as root before switching users
 - **Best Practice**: Always ensure proper directory ownership when using non-root containers
+
+### 2025-07-15: Model-Downloader Library Version Fix
+
+**User Instruction:**
+Model download functionality broke after enhancements. Error: "An error happened while trying to locate the files on the Hub and we cannot find the appropriate snapshot folder for the specified revision on the local disk."
+
+**Assistant Actions:**
+- **Root Cause Analysis**: The execution plan specified pinning `huggingface_hub==0.17.3`, but this version is too old and has compatibility issues with current Hugging Face Hub infrastructure.
+- **Validation**: Confirmed that no breaking changes were made to the core model download logic - only the directory path was changed from `/model` to `/app/model` for permission reasons.
+- **Fix Applied**: Updated `model-downloader/requirements.txt`:
+  - Changed `huggingface_hub==0.17.3` to `huggingface_hub==0.20.3` (more recent stable version)
+  - Kept `google-cloud-storage==2.10.0` as specified
+- **Reasoning**: The older version of huggingface_hub was causing connection/snapshot issues with the current Hub infrastructure.
+
+**Technical Summary:**
+- **Problem**: Pinned library version too old for current infrastructure
+- **Solution**: Updated to more recent stable version while maintaining version pinning
+- **No Logic Changes**: Core download functionality remains unchanged, only directory path was fixed for permissions
+- **Result**: Model download should now work with both proper permissions and compatible library versions
