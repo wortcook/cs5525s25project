@@ -1,4 +1,3 @@
-
 FROM python:3.11-slim 
 # AS basepython
 
@@ -15,6 +14,8 @@ RUN python -m pip install --upgrade pip --no-cache-dir
 # Copy requirements first for better layer caching
 COPY src/requirements.txt .
 RUN pip install -r requirements.txt --no-cache-dir
+
+RUN rm ./requirements.txt
 
 #FROM basepython AS basesetup
 
@@ -35,7 +36,7 @@ RUN mkdir -p /storage/models && chown -R appuser:appuser /storage
 RUN python ./dataprep.py
 
 # Clean up build artifacts
-RUN rm ./dataprep.py ./jailbreaks.csv ./requirements.txt
+RUN rm ./dataprep.py ./jailbreaks.csv
 
 # Switch to non-root user
 USER appuser
