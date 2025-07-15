@@ -38,6 +38,9 @@ RUN python ./dataprep.py
 # Clean up build artifacts
 RUN rm ./dataprep.py ./jailbreaks.csv
 
+# Ensure model files are owned by appuser
+RUN chown appuser:appuser model.pkl cv.pkl
+
 # Switch to non-root user
 USER appuser
 

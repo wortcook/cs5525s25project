@@ -410,3 +410,49 @@ Model download functionality broke after enhancements. Error: "An error happened
 - **Solution**: Updated to more recent stable version while maintaining version pinning
 - **No Logic Changes**: Core download functionality remains unchanged, only directory path was fixed for permissions
 - **Result**: Model download should now work with both proper permissions and compatible library versions
+
+### 2025-07-15: BFilter Service 404 Error Resolution
+
+**User Instruction:**
+Review assistantPrompt.txt job description, then evaluate why bfilter would be up and running but the service is responding with a 404 when accessing the public URL.
+
+**Assistant Actions:**
+- **Root Cause Analysis**: The bfilter service has proper routes defined including `@app.route("/")` for the root path, so a 404 suggests a startup failure rather than missing routes.
+- **Primary Issue Identified**: Model loading failure during container startup. The service tries to load:
+  ```python
+  clf = joblib.load("model.pkl")
+  cv = joblib.load("cv.pkl")
+  ```
+- **Dockerfile Investigation**: Found that `dataprep.py` creates `model.pkl` and `cv.pkl` as root user, but the service runs as `appuser` (non-root), causing permission issues when trying to access the model files.
+- **Fix Applied**: Updated `bfilter/Dockerfile` to ensure model file ownership:
+  ```dockerfile
+  # Run data preparation
+  RUN python ./dataprep.py
+  
+  # Clean up build artifacts
+  RUN rm ./dataprep.py ./jailbreaks.csv
+  
+  # Ensure model files are owned by appuser
+  RUN chown appuser:appuser model.pkl cv.pkl
+  
+  # Switch to non-root user
+  USER appuser
+  ```
+
+**Technical Summary:**
+- **Problem**: Model files created as root but accessed by non-root user, causing startup failure
+- **Solution**: Explicitly set ownership of model files before switching to non-root user
+- **Security**: Maintains non-root container security while ensuring file accessibility
+- **Result**: BFilter service should now start successfully and respond properly at all endpoints including the root URL
+- **Root Cause Analysis**: The execution plan specified pinning `huggingface_hub==0.17.3`, but this version is too old and has compatibility issues with current Hugging Face Hub infrastructure.
+- **Validation**: Confirmed that no breaking changes were made to the core model download logic - only the directory path was changed from `/model` to `/app/model` for permission reasons.
+- **Fix Applied**: Updated `model-downloader/requirements.txt`:
+  - Changed `huggingface_hub==0.17.3` to `huggingface_hub==0.20.3` (more recent stable version)
+  - Kept `google-cloud-storage==2.10.0` as specified
+- **Reasoning**: The older version of huggingface_hub was causing connection/snapshot issues with the current Hub infrastructure.
+
+**Technical Summary:**
+- **Problem**: Pinned library version too old for current infrastructure
+- **Solution**: Updated to more recent stable version while maintaining version pinning
+- **No Logic Changes**: Core download functionality remains unchanged, only directory path was fixed for permissions
+- **Result**: Model download should now work with both proper permissions and compatible library versions
