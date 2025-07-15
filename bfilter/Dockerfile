@@ -1,5 +1,6 @@
 
-FROM python:3.11-slim AS basepython
+FROM python:3.11-slim 
+# AS basepython
 
 # Create non-root user
 RUN groupadd -r appuser && useradd -r -g appuser appuser
@@ -15,7 +16,7 @@ RUN python -m pip install --upgrade pip --no-cache-dir
 COPY src/requirements.txt .
 RUN pip install -r requirements.txt --no-cache-dir
 
-FROM basepython AS basesetup
+#FROM basepython AS basesetup
 
 # Set working directory
 WORKDIR /app
@@ -28,7 +29,7 @@ COPY data/jailbreaks.csv .
 # Create storage directory
 RUN mkdir -p /storage/models && chown -R appuser:appuser /storage
 
-FROM basesetup AS final
+#FROM basesetup AS final
 
 # Run data preparation
 RUN python ./dataprep.py
