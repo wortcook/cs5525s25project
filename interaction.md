@@ -374,3 +374,20 @@ Fix the model-downloader PermissionError where the non-root user cannot create d
 - **Solution**: Use app-relative path (`/app/model`) that the non-root user can write to
 - **Best Practice**: Jobs should not have health checks, only long-running services need them
 - **Result**: Model-downloader can now successfully download and process models without PermissionError
+
+### 2025-07-15: Model-Downloader Additional Permission Fix
+
+**User Instruction:**
+The PermissionError persists even after changing to `/app/model` - now showing "Permission denied: '/app/model'".
+
+**Assistant Actions:**
+- **Root Cause**: The non-root user doesn't have write permissions to the `/app` directory, even though it's the working directory.
+- **Additional Fix**: Updated `model-downloader/Dockerfile` to create the model directory and set proper ownership before switching to non-root user:
+  - Added `RUN mkdir -p /app/model && chown -R appuser:appuser /app` before `USER appuser`
+  - This ensures the non-root user has write permissions to the entire `/app` directory tree
+- **Result**: The model-downloader should now successfully create directories and download models without any permission errors.
+
+**Technical Details:**
+- **Issue**: Docker WORKDIR doesn't automatically grant write permissions to non-root users
+- **Solution**: Explicitly create directories and set ownership as root before switching users
+- **Best Practice**: Always ensure proper directory ownership when using non-root containers

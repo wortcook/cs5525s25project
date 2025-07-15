@@ -11,6 +11,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY main.py .
 
+# Create model directory and set ownership
+RUN mkdir -p /app/model && chown -R appuser:appuser /app
+
 # Switch to non-root user
 USER appuser
 
