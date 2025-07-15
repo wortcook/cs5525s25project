@@ -133,11 +133,35 @@ resource "google_compute_firewall" "allow-internal-llmstub" {
 resource "google_storage_bucket" "model-store" {
   name     = "model-store-${var.project}"
   location = var.region
+  labels   = local.common_labels
 
   # When deleting the bucket, this will also delete all objects in it.
   force_destroy = true
 
   uniform_bucket_level_access = true
+
+  lifecycle_rule {
+    condition {
+      age = 90
+    }
+    action {
+      type = "Delete"
+    }
+  }
+
+  lifecycle_rule {
+    condition {
+      age = 30
+    }
+    action {
+      type          = "SetStorageClass"
+      storage_class = "COLDLINE"
+    }
+  }
+
+  lifecycle {
+    prevent_destroy = false
+  }
 
   # Ensure the Storage API is enabled before creating the bucket.
   depends_on = [google_project_service.project_apis]
@@ -146,11 +170,35 @@ resource "google_storage_bucket" "model-store" {
 resource "google_storage_bucket" "secondary-spam" {
   name     = "secondary-spam-${var.project}"
   location = var.region
+  labels   = local.common_labels
 
   # When deleting the bucket, this will also delete all objects in it.
   force_destroy = true
 
   uniform_bucket_level_access = true
+
+  lifecycle_rule {
+    condition {
+      age = 90
+    }
+    action {
+      type = "Delete"
+    }
+  }
+
+  lifecycle_rule {
+    condition {
+      age = 30
+    }
+    action {
+      type          = "SetStorageClass"
+      storage_class = "COLDLINE"
+    }
+  }
+
+  lifecycle {
+    prevent_destroy = false
+  }
 
   # Ensure the Storage API is enabled before creating the bucket.
   depends_on = [google_project_service.project_apis]
@@ -259,18 +307,18 @@ resource "google_service_account" "bfilter_sa" {
 
 # Grant bfilter service account permission to invoke llm-stub service.
 resource "google_cloud_run_v2_service_iam_member" "bfilter_invokes_llmstub" {
-  project  = google_cloud_run_v2_service.llm-stub-service.project
-  location = google_cloud_run_v2_service.llm-stub-service.location
-  name     = google_cloud_run_v2_service.llm-stub-service.name
+  project  = var.project
+  location = var.region
+  name     = module.llm_stub_service.service_name
   role     = "roles/run.invoker"
   member   = "serviceAccount:${google_service_account.bfilter_sa.email}"
 }
 
 # Grant bfilter service account permission to invoke sfilter service.
 resource "google_cloud_run_v2_service_iam_member" "bfilter_invokes_sfilter" {
-  project  = google_cloud_run_v2_service.sfilter-service.project
-  location = google_cloud_run_v2_service.sfilter-service.location
-  name     = google_cloud_run_v2_service.sfilter-service.name
+  project  = var.project
+  location = var.region
+  name     = module.sfilter_service.service_name
   role     = "roles/run.invoker"
   member   = "serviceAccount:${google_service_account.bfilter_sa.email}"
 }
@@ -313,177 +361,75 @@ resource "google_vpc_access_connector" "llm-stub-connector" {
   }
 }
 
-resource "google_cloud_run_v2_service" "llm-stub-service" {
-  name     = "llm-stub-service"
-  location = var.region
-  deletion_protection = false
-
-  ingress = "INGRESS_TRAFFIC_INTERNAL_ONLY"
- 
-  template {
-    service_account = google_service_account.llm_stub_sa.email
-    scaling {
-      min_instance_count = 1
-      max_instance_count = 10
-    }
-    containers {
-      image = module.llm-stub-build.image_name
-      ports {
-        container_port = var.llm_stub_port
-      }
-    }
-    vpc_access {
-      connector = google_vpc_access_connector.llm-stub-connector.id
-      egress    = "ALL_TRAFFIC"
-    }    
-  }
-
-  # Ensure the Run API is enabled and the image is built.
-  depends_on = [module.llm-stub-build, google_project_service.project_apis, google_service_account.llm_stub_sa, google_vpc_access_connector.llm-stub-connector]
+module "llm_stub_service" {
+  source                  = "./modules/cloud-run-service"
+  service_name            = "llm-stub-service"
+  region                  = var.region
+  image_name              = module.llm-stub-build.image_name
+  port                    = var.llm_stub_port
+  service_account_email   = google_service_account.llm_stub_sa.email
+  vpc_connector_id        = google_vpc_access_connector.llm-stub-connector.id
+  min_instances           = 1
+  max_instances           = 10
+  ingress                 = "INGRESS_TRAFFIC_INTERNAL_ONLY"
+  labels                  = local.common_labels
+  environment_variables   = {}
+  memory                  = "1Gi"
+  cpu                     = "1"
+  depends_on              = [module.llm-stub-build, google_project_service.project_apis, google_service_account.llm_stub_sa, google_vpc_access_connector.llm-stub-connector]
 }
 
-resource "google_cloud_run_v2_service" "sfilter-service" {
-  name     = "sfilter-service"
-  location = var.region
-  project  = var.project
-  deletion_protection = false
-
-  template {
-    scaling {
-      min_instance_count = 1  # Keep at least 1 instance warm
-      max_instance_count = 10
-    }
-    
-    containers {
-      image = module.sfilter-build.image_name
-      ports {
-        container_port = var.sfilter_port
-      }
-      
-      # Allocate more CPU for faster model loading
-      resources {
-        limits = {
-          memory = var.sfilter_memory
-          cpu    = "2"
-        }
-        cpu_idle = true  # Keep CPU allocated when idle
-        startup_cpu_boost = true  # Faster container startup
-      }
-      
-      env {
-        name  = "SECONDARY_MODEL"
-        value = var.secondary_model_location
-      }
-      env{
-        name = "SFILTER_CONFIDENCE_THRESHOLD"
-        value = var.sfilter_confidence_threshold
-      }
-      env{
-        name = "ENABLE_REQUEST_LOGGING"
-        value = var.enable_request_logging
-      }
-      env{
-        name = "MAX_MESSAGE_LENGTH"
-        value = var.max_message_length
-      }
-      
-      # Mount the model from GCS for faster loading
-      volume_mounts {
-        name       = "model-storage"
-        mount_path = "/mnt/models"
-      }
-    }
-    
-    # Add volume for model mounting
-    volumes {
-      name = "model-storage"
-      gcs {
-        bucket    = google_storage_bucket.model-store.name
-        read_only = true
-      }
-    }
-    
-    service_account = google_service_account.sfilter_sa.email
-    vpc_access {
-      connector = google_vpc_access_connector.bfilter-connector.id
-      egress    = "ALL_TRAFFIC"
-    }
-    
-    # Faster startup timeout
-    timeout = "60s"
+module "sfilter_service" {
+  source                  = "./modules/cloud-run-service"
+  service_name            = "sfilter-service"
+  region                  = var.region
+  image_name              = module.sfilter-build.image_name
+  port                    = var.sfilter_port
+  service_account_email   = google_service_account.sfilter_sa.email
+  vpc_connector_id        = google_vpc_access_connector.bfilter-connector.id
+  min_instances           = 1
+  max_instances           = 10
+  labels                  = local.common_labels
+  environment_variables   = {
+    SECONDARY_MODEL = var.secondary_model_location
+    SFILTER_CONFIDENCE_THRESHOLD = var.sfilter_confidence_threshold
+    ENABLE_REQUEST_LOGGING = var.enable_request_logging
+    MAX_MESSAGE_LENGTH = var.max_message_length
   }
-
-  depends_on = [module.sfilter-build, google_project_service.project_apis, google_cloud_run_v2_job.model_downloader_job, google_storage_bucket_iam_member.run_service_agent_gcs_mount_access]
+  memory                  = var.sfilter_memory
+  cpu                     = "2"
+  depends_on              = [module.sfilter-build, google_project_service.project_apis, google_cloud_run_v2_job.model_downloader_job, google_storage_bucket_iam_member.run_service_agent_gcs_mount_access]
 }
 
-resource "google_cloud_run_v2_service" "bfilter-service" {
-  name     = "bfilter-service"
-  location = var.region
-  deletion_protection = false
-
-  template {
-    service_account = google_service_account.bfilter_sa.email
-    scaling {
-      min_instance_count = 1
-      max_instance_count = 10
-    }
-    vpc_access{
-      # network_interfaces {
-      #   network = google_compute_network.llm-vpc.id
-      #   subnetwork = google_compute_subnetwork.llm-vpc-filter-subnet.id
-      # }
-      connector = google_vpc_access_connector.bfilter-connector.id
-      egress = "ALL_TRAFFIC"
-    }
-
-    containers {
-      image = module.bfilter-build.image_name
-      ports {
-        container_port = var.bfilter_port
-      }
-      env {
-        name  = "LLMSTUB_URL"
-        value = google_cloud_run_v2_service.llm-stub-service.uri
-      }
-      env{
-        name = "SFILTER_URL"
-        value = google_cloud_run_v2_service.sfilter-service.uri
-      }
-      env{
-        name = "PROJECT_ID"
-        value = var.project
-      }
-      env{
-        name = "BFILTER_THRESHOLD"
-        value = var.bfilter_threshold
-      }
-      env{
-        name = "ENABLE_REQUEST_LOGGING"
-        value = var.enable_request_logging
-      }
-      env{
-        name = "MAX_MESSAGE_LENGTH"
-        value = var.max_message_length
-      }
-    }
+module "bfilter_service" {
+  source                  = "./modules/cloud-run-service"
+  service_name            = "bfilter-service"
+  region                  = var.region
+  image_name              = module.bfilter-build.image_name
+  port                    = var.bfilter_port
+  service_account_email   = google_service_account.bfilter_sa.email
+  vpc_connector_id        = google_vpc_access_connector.bfilter-connector.id
+  min_instances           = 1
+  max_instances           = 10
+  labels                  = local.common_labels
+  environment_variables   = {
+    LLMSTUB_URL = module.llm_stub_service.service_url
+    SFILTER_URL = module.sfilter_service.service_url
+    ENABLE_REQUEST_LOGGING = var.enable_request_logging
+    MAX_MESSAGE_LENGTH = var.max_message_length
   }
-
-  depends_on = [
-    module.bfilter-build,
-    google_cloud_run_v2_service.llm-stub-service,
-    google_cloud_run_v2_service.sfilter-service,
-    google_project_service.project_apis,
-    google_service_account.bfilter_sa,
-    google_vpc_access_connector.bfilter-connector,
-  ]
+  memory                  = "1Gi"
+  cpu                     = "1"
+  depends_on              = [module.bfilter-build, google_project_service.project_apis, google_service_account.bfilter_sa, google_vpc_access_connector.bfilter-connector]
 }
+
 
 # WARNING: This makes the bfilter-service publicly accessible to anyone on the internet.
 # Only use this if the service is explicitly designed for unauthenticated public access.
 resource "google_cloud_run_v2_service_iam_member" "bfilter_public_invoker" {
-  project  = google_cloud_run_v2_service.bfilter-service.project
-  location = google_cloud_run_v2_service.bfilter-service.location
-  name     = google_cloud_run_v2_service.bfilter-service.name
+  project  = var.project
+  location = var.region
+  name     = module.bfilter_service.service_name
   role     = "roles/run.invoker"
   member   = "allUsers"
 }
@@ -594,23 +540,7 @@ resource "google_pubsub_subscription" "secondary_filter_subscription" {
 #     cloud_function_v2 {
 #       name = google_cloud_run_v2_service.bfilter-service.id
 #     }
-#   }
 
-#   depends_on = [google_cloud_run_v2_service.bfilter-service]
-# }
-
-# resource "google_monitoring_uptime_check_config" "sfilter_health_check" {
-#   display_name = "SFilter Health Check"
-#   timeout      = "10s"
-#   period       = "60s"
-
-#   synthetic_monitor {
-#     cloud_function_v2 {
-#       name = google_cloud_run_v2_service.sfilter-service.id
-#     }
-#   }
-
-#   depends_on = [google_cloud_run_v2_service.sfilter-service]
 # }
 
 # resource "google_monitoring_uptime_check_config" "llmstub_health_check" {

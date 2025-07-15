@@ -1,40 +1,48 @@
-FROM python:3.11 AS basepython
-# FROM us-docker.pkg.dev/vertex-ai/prediction/pytorch-gpu.2-4:latest AS basepython
-# FROM huggingface/transformers-gpu
-# FROM pytorch/pytorch:2.7.1-cuda11.8-cudnn9-runtime AS basepython
 
-RUN python -m pip install --upgrade pip
+FROM python:3.11-slim AS basepython
 
+# Create non-root user
+RUN groupadd -r appuser && useradd -r -g appuser appuser
+
+# Install system dependencies and clean up in single layer
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN python -m pip install --upgrade pip --no-cache-dir
+
+# Copy requirements first for better layer caching
 COPY src/requirements.txt .
-# Install the specified packages
-RUN pip install -r requirements.txt
-
-ENV LLMSTUB_URL=google_cloud_run_v2_service.llm-stub-service.uri
-ENV SFILTER_URL=google_cloud_run_v2_service.sfilter-service.uri
-# ENV SECONDARY_MODEL=jackhhao/jailbreak-classifier
+RUN pip install -r requirements.txt --no-cache-dir
 
 FROM basepython AS basesetup
 
-# Copy function code
+# Set working directory
+WORKDIR /app
+
+# Copy application files
 COPY src/server.py .
 COPY src/dataprep.py .
-
-# Copy requirements.txt
-
-# Copy the CSV training data
 COPY data/jailbreaks.csv .
 
-RUN mkdir -p /storage/models
+# Create storage directory
+RUN mkdir -p /storage/models && chown -R appuser:appuser /storage
 
-FROM basesetup
-# Run the data prep script to create the pickles
+FROM basesetup AS final
+
+# Run data preparation
 RUN python ./dataprep.py
 
-# Remove the files that are no longer needed
-RUN rm ./dataprep.py
-RUN rm ./jailbreaks.csv
-RUN rm ./requirements.txt
+# Clean up build artifacts
+RUN rm ./dataprep.py ./jailbreaks.csv ./requirements.txt
 
-# Set the CMD to your handler (could also be done as a parameter override outside of the Dockerfile)
-CMD ["gunicorn", "-b", "0.0.0.0:8082", "server:app"]
+# Switch to non-root user
+USER appuser
+
+# Add health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8082/health || exit 1
+
+# Set the CMD
+CMD ["gunicorn", "-b", "0.0.0.0:8082", "server:app", "--workers=2", "--timeout=30"]
 

@@ -8,20 +8,23 @@ output "region" {
   value       = var.region
 }
 
+
 output "bfilter_url" {
   description = "URL of the BFilter service (publicly accessible)"
-  value       = google_cloud_run_v2_service.bfilter-service.uri
+  value       = module.bfilter_service.service_url
 }
+
 
 output "sfilter_url" {
   description = "URL of the SFilter service (internal only)"
-  value       = google_cloud_run_v2_service.sfilter-service.uri
+  value       = module.sfilter_service.service_url
   sensitive   = true
 }
 
+
 output "llmstub_url" {
   description = "URL of the LLM stub service (internal only)"
-  value       = google_cloud_run_v2_service.llm-stub-service.uri
+  value       = module.llm_stub_service.service_url
   sensitive   = true
 }
 

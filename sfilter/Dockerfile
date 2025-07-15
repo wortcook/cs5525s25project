@@ -1,28 +1,33 @@
-# FROM us-docker.pkg.dev/vertex-ai/prediction/pytorch-gpu.2-4:latest AS basepython
+
 FROM pytorch/pytorch:2.7.1-cuda11.8-cudnn9-runtime AS basepython
 
+# Create non-root user
+RUN groupadd -r appuser && useradd -r -g appuser appuser
 
-RUN python -m pip install --upgrade pip
+RUN python -m pip install --upgrade pip --no-cache-dir
 
 COPY src/requirements.txt .
-# Install the specified packages
-RUN pip install -r requirements.txt
-
-# ENV SECONDARY_MODEL=/storage/models/jailbreak-classifier
+RUN pip install -r requirements.txt --no-cache-dir
 
 FROM basepython AS basesetup
 
-# Copy function code
+WORKDIR /app
 COPY src/server.py .
 
-# Copy requirements.txt
+# Create storage directory  
+RUN mkdir -p /storage/models && chown -R appuser:appuser /storage
 
-# RUN mkdir -p /storage/models
+FROM basesetup AS final
 
-FROM basesetup
-# Run the data prep script to create the pickles
-# RUN rm ./requirements.txt
+# Clean up
+RUN rm -f requirements.txt
 
-# Set the CMD to your handler (could also be done as a parameter override outside of the Dockerfile)
-CMD ["gunicorn", "-b", "0.0.0.0:8083", "server:app"]
+# Switch to non-root user
+USER appuser
+
+# Add health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:8083/health || exit 1
+
+CMD ["gunicorn", "-b", "0.0.0.0:8083", "server:app", "--workers=1", "--timeout=120"]
 
