@@ -19,7 +19,7 @@ def main():
         logging.error("GCS_BUCKET_NAME environment variable not set.")
         exit(1)
 
-    local_dir = "/model"
+    local_dir = "/app/model"
     os.makedirs(local_dir, exist_ok=True)
     
     logging.info(f"Downloading model '{model_name}' from Hugging Face.")
