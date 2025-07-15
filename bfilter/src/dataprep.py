@@ -12,10 +12,10 @@ import datetime
 import os
 
 
-#STARTUP CHECK, HAVE THE ENVIRONMENT VARIABLES BEEN SET
-LLMSTUB_URL = os.getenv("LLMSTUB_URL")
-if not LLMSTUB_URL:
-    raise ValueError("LLMSTUB_URL environment variable is not set.")
+# #STARTUP CHECK, HAVE THE ENVIRONMENT VARIABLES BEEN SET
+# LLMSTUB_URL = os.getenv("LLMSTUB_URL")
+# if not LLMSTUB_URL:
+#     raise ValueError("LLMSTUB_URL environment variable is not set.")
 
 # SECONDARYSTUB_URL = os.getenv("SECONDARYSTUB_URL")
 # if not SECONDARYSTUB_URL:
