@@ -1,3 +1,13 @@
+#############################################
+# Thomas Jones
+# CS5525
+#############################################
+# Terraform configuration for Google Cloud 
+# LLM Infrastructure. This configuration sets
+# up the necessary resources for running a 
+# large language model (LLM) infrastructure
+# on Google Cloud Platform (GCP) using Terraform.
+#############################################
 terraform {
   required_providers {
     time = {
@@ -31,8 +41,6 @@ resource "google_project_service" "project_apis" {
   service                    = each.key
   disable_on_destroy         = false
   disable_dependent_services = false
-
-  # No retry logic needed directly in this resource
 }
 
 resource "google_compute_network" "llm-vpc" {
