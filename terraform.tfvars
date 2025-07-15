@@ -1,1 +1,1 @@
-project = "your-gcp-project-id"
+project = "cs5525s25"
