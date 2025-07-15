@@ -438,7 +438,6 @@ resource "google_cloud_run_v2_job" "model_downloader_job" {
   name     = "model-downloader-job"
   location = var.region
   project  = var.project
-  deletion_protection = false
 
   template {
     template {
