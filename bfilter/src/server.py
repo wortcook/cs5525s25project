@@ -62,6 +62,7 @@ import hashlib
 import time
 import logging
 import sys
+import gc
 from datetime import datetime
 from collections import defaultdict
 from enum import Enum
@@ -75,9 +76,33 @@ BFILTER_THRESHOLD = float(os.getenv("BFILTER_THRESHOLD", "0.9"))
 ENABLE_REQUEST_LOGGING = os.getenv("ENABLE_REQUEST_LOGGING", "false").lower() == "true"
 MAX_MESSAGE_LENGTH = int(os.getenv("MAX_MESSAGE_LENGTH", "10000"))
 
-#MODEL LOAD FOR BAYESIAN FILTER
-clf = joblib.load("model.pkl")
-cv = joblib.load("cv.pkl")
+# Global model variables - loaded lazily
+clf = None
+cv = None
+
+def load_models():
+    """Load models lazily to reduce memory footprint during startup"""
+    global clf, cv
+    if clf is None or cv is None:
+        try:
+            structured_logger.info("Starting lazy model loading", stage="model_init")
+            
+            # Force garbage collection before loading
+            gc.collect()
+            
+            structured_logger.info("Loading Bayesian models")
+            clf = joblib.load("model.pkl")
+            cv = joblib.load("cv.pkl")
+            
+            # Force garbage collection after loading
+            gc.collect()
+            
+            structured_logger.info("Models loaded successfully", 
+                                 clf_type=type(clf).__name__,
+                                 cv_type=type(cv).__name__)
+        except Exception as e:
+            structured_logger.error("Failed to load models", error=str(e))
+            raise e
 
 
 # Configure structured logging
@@ -121,11 +146,16 @@ def get_cached_prediction(message_hash: str) -> Optional[float]:
 
 
 def cache_prediction(message_hash: str, score: float) -> None:
-    """Cache a prediction result"""
-    if len(prediction_cache) > 1000:
+    """Cache a prediction result with aggressive memory management"""
+    # More aggressive cache cleanup to prevent memory issues
+    if len(prediction_cache) > 500:  # Reduced from 1000
         keys = list(prediction_cache.keys())
-        for key in keys[:100]:
+        # Remove 60% of cache when limit reached
+        for key in keys[:300]:  # Increased from 100
             del prediction_cache[key]
+        structured_logger.info("Cache cleanup performed", 
+                             remaining_size=len(prediction_cache),
+                             removed_count=300)
     prediction_cache[message_hash] = score
 
 # Performance tracking
@@ -270,6 +300,9 @@ def index():
 @app.route("/handle", methods=["POST"])
 @handle_errors
 def main():
+    # Ensure models are loaded
+    load_models()
+    
     userMessage = request.form.get('message', '')
     # Input validation
     if not userMessage:
@@ -338,12 +371,14 @@ def main():
 def health_check():
     """Health check endpoint for load balancer"""
     try:
+        # Ensure models are loaded for health check
+        load_models()
         # Quick model validation
         test_vector = cv.transform(["test"]).toarray()
         clf.predict_proba(test_vector)
         return {"status": "healthy", "timestamp": time.time()}, 200
     except Exception as e:
-        app.logger.error(f"Health check failed: {e}")
+        structured_logger.error("Health check failed", error=str(e))
         return {"status": "unhealthy", "error": str(e)}, 503
 
 # Readiness check endpoint  
@@ -362,6 +397,8 @@ def readiness_check():
             checks[var] = "OK"
     # Check model files
     try:
+        # Ensure models are loaded
+        load_models()
         if clf is None or cv is None:
             errors.append("Models not loaded")
             checks["models"] = "FAIL"
@@ -473,4 +510,14 @@ app.start_time = time.time()
 app.request_count = 0
 
 if __name__ == "__main__":
+    # Startup logging for Cloud Run diagnostics
+    structured_logger.info("BFilter service starting", 
+                         stage="startup",
+                         python_version=sys.version,
+                         available_memory_mb=os.environ.get('CLOUDSDK_COMPUTE_MEMORY_LIMIT', 'unknown'))
+    
+    # Force initial garbage collection
+    gc.collect()
+    
+    structured_logger.info("Starting Flask application", port=8082, host="0.0.0.0")
     app.run(debug=True, port=8082, host='0.0.0.0')

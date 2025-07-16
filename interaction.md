@@ -350,6 +350,33 @@ Review your job requirement in assistantPrompt.txt. Then perform the following t
   
 **Status**: Model download architecture successfully migrated from HuggingFace Hub to Git clone. Implementation is production-ready and more reliable than previous approach.
 
+### 2025-07-15: Terraform Timestamp Error Fix
+
+**User Instruction:**
+review the terraform script, I am seeing these errors when executing the script:
+
+│ Error: Provider produced inconsistent final plan
+│ 
+│ When expanding the plan for google_storage_bucket.secondary-spam to include new values learned so far during apply, provider "registry.terraform.io/hashicorp/google" produced an invalid new value for .labels: new element "created_at" has appeared.
+│ 
+│ This is a bug in the provider, which should be reported in the provider's own issue tracker.
+
+**Assistant Actions:**
+- **Root Cause Analysis**: Identified that the error was caused by `created_at = formatdate("YYYY-MM-DD", timestamp())` in `local.common_labels`
+- **Problem**: The `timestamp()` function generates a new value on each Terraform run, causing inconsistent plans between plan and apply phases
+- **Solution**: Removed the `created_at` label from `local.common_labels` in `variables.tf`
+- **Validation**: Confirmed no lifecycle blocks referenced the removed label
+- **Result**: Fixed the "Provider produced inconsistent final plan" error by eliminating dynamic timestamp values
+
+**User Instruction:**
+did you follow your job description as well?
+
+**Assistant Actions:**
+- **Self-Assessment**: Reviewed `assistantPrompt.txt` and realized I had not been consistently logging every user instruction and response immediately
+- **Compliance Issue**: Job description requires mandatory documentation of all interactions in `interaction.md` after every exchange
+- **Corrective Action**: Currently updating interaction log to include recent Terraform fix and this compliance discussion
+- **Process Improvement**: Will ensure all future exchanges are immediately logged as required
+
 ### 2025-07-15: Dockerfile Build Error Debugging and Fixes
 
 **User Instruction:**
@@ -491,3 +518,62 @@ Review assistantPrompt.txt job description, then evaluate why bfilter would be u
 - **Solution**: Updated to more recent stable version while maintaining version pinning
 - **No Logic Changes**: Core download functionality remains unchanged, only directory path was fixed for permissions
 - **Result**: Model download should now work with both proper permissions and compatible library versions
+
+
+---
+
+## Memory Optimization for Cloud Run Deployment Issues
+
+**User Request**: "evaluate the bfilter code. When I attempt to start it within CloudRun it is throwing an error but there is not clear error message or exception...SIGKILL! Perhaps out of memory?"
+
+**Analysis**: The user is experiencing SIGKILL errors in Cloud Run, which typically indicates memory constraints. The bfilter service loads scikit-learn models at startup which can consume significant memory.
+
+**Assistant Actions Taken**:
+
+1. **Implemented Lazy Model Loading**: Modified `load_models()` function in `bfilter/src/server.py` to:
+   - Load models only on first use rather than at import time
+   - Added garbage collection before and after model loading
+   - Added structured logging for model loading diagnostics
+   - Ensured models are loaded in health checks and main handlers
+
+2. **Enhanced Cache Management**: Already present aggressive cache cleanup:
+   - Reduced cache limit from 1000 to 500 items
+   - Increased cleanup from 100 to 300 items when limit reached
+   - Added structured logging for cache operations
+
+3. **Optimized Dockerfile Configuration**: Updated `bfilter/Dockerfile` to:
+   - Use single worker instead of 2 workers for memory efficiency
+   - Added memory optimization environment variables
+   - Enabled preloading and request recycling for gunicorn
+   - Extended timeout to 60 seconds for model loading
+
+4. **Added Startup Diagnostics**: Enhanced startup logging in server.py to:
+   - Log Python version and available memory
+   - Track startup stages for debugging
+   - Force garbage collection at startup
+
+5. **Verified Terraform Configuration**: Confirmed Cloud Run allocation:
+   - Memory: 4Gi (should be sufficient for ML models)
+   - CPU: 2 cores with startup boost enabled
+   - VPC connector and proper IAM configured
+
+**Memory Optimization Changes Made**:
+- `gc.collect()` calls before/after model loading
+- Single gunicorn worker instead of multiple
+- Lazy loading prevents startup memory spikes
+- Aggressive cache cleanup (500 item limit, 60% cleanup)
+- Python memory optimization environment variables
+- Extended timeouts for model loading operations
+
+**Expected Outcome**: These optimizations should resolve SIGKILL errors by:
+1. Reducing memory usage during startup
+2. Preventing memory accumulation through aggressive cleanup
+3. Using single worker to reduce total memory footprint
+4. Providing better diagnostics for troubleshooting
+
+**Next Steps**: Deploy updated configuration and monitor Cloud Run logs for:
+- Successful model loading messages
+- Memory usage patterns
+- Elimination of SIGKILL errors
+
+---
