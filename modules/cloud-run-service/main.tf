@@ -5,14 +5,14 @@ variable "region" {
   type        = string
 }
 
-terraform {
-  required_providers {
-    google = {
-      source  = "hashicorp/google"
-      version = "~> 4.0"
-    }
-  }
-}
+# terraform {
+#   required_providers {
+#     google = {
+#       source  = "hashicorp/google"
+#       version = "~> 4.0"
+#     }
+#   }
+# }
 
 variable "service_name" {
   description = "Name of the Cloud Run service"
@@ -145,7 +145,6 @@ resource "google_cloud_run_v2_service" "service" {
         read_only = true
       }
     }
-    
     service_account = var.service_account_email
     
     vpc_access {
