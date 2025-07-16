@@ -405,19 +405,13 @@ module "sfilter_service" {
   max_instances           = 10
   labels                  = local.common_labels
   environment_variables   = {
-    SECONDARY_MODEL = var.secondary_model_location
+    SECONDARY_MODEL = "${var.model_mount_path}/${var.model_folder_name}"
     SFILTER_CONFIDENCE_THRESHOLD = var.sfilter_confidence_threshold
     ENABLE_REQUEST_LOGGING = var.enable_request_logging
     MAX_MESSAGE_LENGTH = var.max_message_length
   }
-  gcs_volume_mounts = [
-    {
-      name       = "model-storage"
-      bucket     = google_storage_bucket.model-store.name
-      mount_path = "/mnt/models"
-      read_only  = true
-    }
-  ]
+  gcs_bucket_name         = google_storage_bucket.model-store.name
+  model_mount_path        = var.model_mount_path
   memory                  = var.sfilter_memory
   cpu                     = "2"
   depends_on              = [module.sfilter-build, google_project_service.project_apis, google_cloud_run_v2_job.model_downloader_job, google_storage_bucket_iam_member.run_service_agent_gcs_mount_access]

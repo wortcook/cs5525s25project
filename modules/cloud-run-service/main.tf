@@ -81,15 +81,16 @@ variable "labels" {
   default     = {}
 }
 
-variable "gcs_volume_mounts" {
-  description = "GCS volume mounts for the container"
-  type = list(object({
-    name        = string
-    bucket      = string
-    mount_path  = string
-    read_only   = optional(bool, true)
-  }))
-  default = []
+variable "gcs_bucket_name" {
+  description = "GCS bucket name for model storage"
+  type        = string
+  default     = ""
+}
+
+variable "model_mount_path" {
+  description = "Path where the GCS bucket will be mounted"
+  type        = string
+  default     = "/storage/models"
 }
 
 resource "google_cloud_run_v2_service" "service" {
@@ -131,22 +132,24 @@ resource "google_cloud_run_v2_service" "service" {
         }
       }
       
+      # Static volume mount for model storage
       dynamic "volume_mounts" {
-        for_each = var.gcs_volume_mounts
+        for_each = var.gcs_bucket_name != "" ? [1] : []
         content {
-          name       = volume_mounts.value.name
-          mount_path = volume_mounts.value.mount_path
+          name       = "model-store-volume"
+          mount_path = var.model_mount_path
         }
       }
     }
     
+    # Static volume for model storage (as suggested)
     dynamic "volumes" {
-      for_each = var.gcs_volume_mounts
+      for_each = var.gcs_bucket_name != "" ? [1] : []
       content {
-        name = volumes.value.name
-        nfs {
-          server = "gcs-fuse.storage.googleapis.com"
-          path   = "/${volumes.value.bucket}"
+        name = "model-store-volume"
+        gcs {
+          bucket    = var.gcs_bucket_name
+          read_only = true # The service only needs to read the model
         }
       }
     }

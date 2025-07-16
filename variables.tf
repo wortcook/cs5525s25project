@@ -119,3 +119,25 @@ variable "sfilter_memory" {
     error_message = "Memory must be specified in Mi or Gi format (e.g., '4Gi', '8Gi')."
   }
 }
+
+variable "model_mount_path" {
+  description = "Path where the GCS model bucket will be mounted in the container"
+  type        = string
+  default     = "/storage/models"
+
+  validation {
+    condition     = can(regex("^/[a-zA-Z0-9/_-]+$", var.model_mount_path))
+    error_message = "Mount path must be an absolute path starting with / and containing only alphanumeric characters, underscores, hyphens, and forward slashes."
+  }
+}
+
+variable "model_folder_name" {
+  description = "Name of the model folder within the GCS bucket"
+  type        = string
+  default     = "jailbreak-model"
+
+  validation {
+    condition     = can(regex("^[a-zA-Z0-9_-]+$", var.model_folder_name))
+    error_message = "Model folder name must contain only alphanumeric characters, underscores, and hyphens."
+  }
+}

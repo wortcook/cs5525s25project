@@ -1,6 +1,11 @@
 
 FROM pytorch/pytorch:2.7.1-cuda11.8-cudnn9-runtime AS basepython
 
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
 # Create non-root user
 RUN groupadd -r appuser && useradd -r -g appuser appuser
 
@@ -13,9 +18,6 @@ FROM basepython AS basesetup
 
 WORKDIR /app
 COPY src/server.py .
-
-# Create storage directory  
-RUN mkdir -p /storage/models && chown -R appuser:appuser /storage
 
 FROM basesetup AS final
 
