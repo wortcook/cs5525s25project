@@ -577,3 +577,45 @@ Review assistantPrompt.txt job description, then evaluate why bfilter would be u
 - Elimination of SIGKILL errors
 
 ---
+
+
+---
+
+## Authentication Fix for Service-to-Service Calls
+
+**User Request**: "double check that there will not be any issues making authenticated calls from bfilter to sfilter and llmstub. Remember that these are HTTP calls to specific ports."
+
+**Analysis**: Comprehensive review of service-to-service authentication revealed one critical issue in the readiness checks.
+
+**Issues Found and Fixed**:
+
+1. **✅ Service Account Permissions**: Properly configured
+   - BFilter SA has `roles/run.invoker` on both SFilter and LLMStub services
+   - Pub/Sub permissions added for `roles/pubsub.publisher`
+
+2. **✅ Environment Variables**: Correctly configured
+   - `SFILTER_URL` and `LLMSTUB_URL` passed from Terraform outputs
+   - `PROJECT_ID` added for Pub/Sub functionality
+
+3. **✅ Main Request Flow**: Authentication working correctly
+   - Uses `google_id_token.fetch_id_token()` for service-to-service auth
+   - Circuit breaker pattern implemented with retry logic
+   - Calls correct endpoints (root `/` with POST method)
+
+4. **🔧 Fixed: Readiness Check Authentication**
+   - **Problem**: Health checks used unauthenticated `requests.get()` calls
+   - **Solution**: Updated readiness checks to use authenticated requests with identity tokens
+   - **Impact**: Prevents 401 errors during health checks of internal services
+
+**Infrastructure Changes**:
+- Removed duplicate Pub/Sub topic definition
+- Added required APIs: `pubsub.googleapis.com`, `monitoring.googleapis.com`
+- Ensured BFilter is publicly accessible with `INGRESS_TRAFFIC_ALL`
+- SFilter and LLMStub remain internal-only with proper authentication
+
+**Expected Outcome**: 
+- BFilter can successfully authenticate to SFilter and LLMStub for both main requests and health checks
+- All services properly isolated with Cloud Run authentication
+- Public access only to BFilter service as intended
+
+---

@@ -37,6 +37,8 @@ resource "google_project_service" "project_apis" {
     "storage.googleapis.com",
     "artifactregistry.googleapis.com",
     "vpcaccess.googleapis.com",
+    "pubsub.googleapis.com",
+    "monitoring.googleapis.com",
   ])
   service                    = each.key
   disable_on_destroy         = false
@@ -126,6 +128,11 @@ resource "google_compute_firewall" "allow-internal-llmstub" {
   source_ranges = ["10.0.0.0/28", "10.0.2.0/28"] # Allow traffic from main subnet and llmstub-subnet
   target_tags   = ["http-server"] # Or any relevant target tag for your service
 }
+
+###############
+# PUB/SUB
+###############
+# Removed duplicate - using secondary_filter_topic below instead
 
 ###############
 # STORAGE
@@ -323,6 +330,13 @@ resource "google_cloud_run_v2_service_iam_member" "bfilter_invokes_sfilter" {
   member   = "serviceAccount:${google_service_account.bfilter_sa.email}"
 }
 
+# Grant bfilter service account permission to publish to Pub/Sub for jailbreak logging
+resource "google_project_iam_member" "bfilter_pubsub_publisher" {
+  project = var.project
+  role    = "roles/pubsub.publisher"
+  member  = "serviceAccount:${google_service_account.bfilter_sa.email}"
+}
+
 ###############
 # SERVICE WORKERS
 ###############
@@ -411,10 +425,12 @@ module "bfilter_service" {
   vpc_connector_id        = google_vpc_access_connector.bfilter-connector.id
   min_instances           = 1
   max_instances           = 10
+  ingress                 = "INGRESS_TRAFFIC_ALL"  # Make publicly accessible
   labels                  = local.common_labels
   environment_variables   = {
     LLMSTUB_URL = module.llm_stub_service.service_url
     SFILTER_URL = module.sfilter_service.service_url
+    PROJECT_ID  = var.project  # Add missing PROJECT_ID for Pub/Sub
     ENABLE_REQUEST_LOGGING = var.enable_request_logging
     MAX_MESSAGE_LENGTH = var.max_message_length
   }

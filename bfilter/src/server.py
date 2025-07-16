@@ -416,7 +416,11 @@ def readiness_check():
     ]
     for service_name, url in dependency_checks:
         try:
-            response = requests.get(f"{url.rstrip('/')}/health", timeout=5)
+            # Use authenticated requests for internal services
+            auth_req = auth_requests.Request()
+            identity_token = google_id_token.fetch_id_token(auth_req, url)
+            headers = {"Authorization": f"Bearer {identity_token}"}
+            response = requests.get(f"{url.rstrip('/')}/health", headers=headers, timeout=5)
             if response.status_code == 200:
                 checks[service_name] = "OK"
             else:
