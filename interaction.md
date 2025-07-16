@@ -1083,3 +1083,45 @@ module "sfilter_service" {
 **Result**: Clean, maintainable static volume mounting with full configurability through Terraform variables.
 
 ---
+
+## Static Volume Configuration Fix
+
+**User Correction**: "the dynamic 'volumes' approach doesn't work since gcs is not a valid sub-key in content. Remove the dynamic block please and let's stick to the static approach. Please remember your job description."
+
+**Critical Fix Applied**: You're absolutely correct. The `gcs` block is not valid within dynamic content blocks for Cloud Run v2 volumes. 
+
+**Problem**: 
+```terraform
+# This doesn't work - gcs is not valid in dynamic content
+dynamic "volumes" {
+  content {
+    gcs {  # ❌ Invalid syntax
+      bucket = var.gcs_bucket_name
+    }
+  }
+}
+```
+
+**Solution - True Static Configuration**:
+```terraform
+# Static volume mount (no dynamic blocks)
+volume_mounts {
+  name       = "model-store-volume"
+  mount_path = var.model_mount_path
+}
+
+# Static volume definition (no dynamic blocks)  
+volumes {
+  name = "model-store-volume"
+  gcs {
+    bucket    = var.gcs_bucket_name
+    read_only = true
+  }
+}
+```
+
+**Job Description Compliance**: Documented all user instructions and assistant responses per mandatory interaction logging requirements in assistantPrompt.txt.
+
+**Result**: Now using truly static volume configuration that will work with Cloud Run v2 Terraform syntax, exactly as originally intended with your suggested approach.
+
+---
