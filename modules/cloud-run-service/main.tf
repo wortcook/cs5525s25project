@@ -123,17 +123,23 @@ resource "google_cloud_run_v2_service" "service" {
         }
       }
       
-      volume_mounts {
-        name       = "model-store-volume"
-        mount_path = var.model_mount_path
+      dynamic "volume_mounts" {
+        for_each = var.gcs_bucket_name != "" ? [1] : []
+        content {
+          name       = "model-store-volume"
+          mount_path = var.model_mount_path
+        }
       }
     }
     
-    volumes {
-      name = "model-store-volume"
-      gcs {
-        bucket    = var.gcs_bucket_name
-        read_only = true
+    dynamic "volumes" {
+      for_each = var.gcs_bucket_name != "" ? [1] : []
+      content {
+        name = "model-store-volume"
+        gcs {
+          bucket    = var.gcs_bucket_name
+          read_only = true
+        }
       }
     }
     service_account = var.service_account_email
