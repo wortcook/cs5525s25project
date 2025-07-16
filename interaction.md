@@ -659,3 +659,70 @@ Review assistantPrompt.txt job description, then evaluate why bfilter would be u
 **Result**: SFilter will now correctly load the model from `/mnt/models/jailbreak-model` where the GCS bucket contents are mounted.
 
 ---
+
+
+---
+
+## SFilter GCS Volume Mount Path Validation and Restoration
+
+**User Request**: "undo the changes that were made to server.py in sfilter. Loading it directly from a mounted bucket was previously working and I want to maintain that method" + "validate that the path is correct and update the interaction file, make sure to review your job description"
+
+**Job Description Compliance**: Following mandatory interaction logging requirements and complete validation process as specified in assistantPrompt.txt.
+
+**Path Validation Process**:
+
+1. **GitHub Repository Analysis**:
+   - URL: `https://github.com/wortcook/jailbreak-model.git`
+   - Repository name: `jailbreak-model` (confirmed via web scraping)
+   - Contains: pytorch_model.bin, config.json, tokenizer files
+
+2. **Model Downloader Path Logic**:
+   - `model_folder_in_bucket = os.path.splitext(os.path.basename(repo_url))[0]`
+   - Result: `"jailbreak-model"`
+   - GCS storage path: `gs://bucket-name/jailbreak-model/`
+
+3. **GCS Volume Mount Configuration**:
+   - Mount point: `/mnt/models`
+   - Bucket contents accessible at: `/mnt/models/jailbreak-model/`
+   - Variable: `secondary_model_location = "/mnt/models/jailbreak-model"`
+
+4. **SFilter Loading Verification**:
+   - Environment: `SECONDARY_MODEL = /mnt/models/jailbreak-model`
+   - Code: `AutoTokenizer.from_pretrained(SECONDARY_MODEL)`
+   - Expected files at: `/mnt/models/jailbreak-model/config.json`, etc.
+
+**Changes Applied (Restoration)**:
+
+1. **Reverted SFilter server.py**:
+   - ❌ Removed: GCS download functionality, `google.cloud.storage` imports
+   - ✅ Restored: Direct model loading from mounted path
+   - ❌ Removed: `download_model_from_gcs()` function
+   - ✅ Restored: Simple `load_model()` function
+
+2. **Reverted Requirements**:
+   - ❌ Removed: `google-cloud-storage==2.10.0`
+   - ✅ Restored: Basic requirements (transformers, torch, flask, etc.)
+
+3. **Restored Cloud Run Volume Mount**:
+   - ✅ Added: `gcs_volume_mounts` variable to cloud-run-service module
+   - ✅ Added: volume_mounts and volumes configuration (NFS syntax)
+   - ⚠️  Note: Used NFS syntax due to Cloud Run v2 limitations with direct GCS blocks
+
+4. **Updated SFilter Service Configuration**:
+   - ✅ Added: GCS volume mount pointing to model-store bucket
+   - ✅ Mount: `/mnt/models` → bucket contents
+   - ❌ Removed: Download-related environment variables
+
+5. **Corrected Variable Path**:
+   - ✅ Updated: `secondary_model_location = "/mnt/models/jailbreak-model"`
+   - ✅ Description: "The path within the mounted GCS bucket"
+
+**Path Validation Result**: ✅ **CORRECT**
+- Model files stored in GCS at: `jailbreak-model/`
+- Mounted at: `/mnt/models/`
+- SFilter loads from: `/mnt/models/jailbreak-model/`
+- Path configuration validated through complete flow analysis
+
+**Expected Outcome**: SFilter will load the transformer model directly from the GCS-mounted path without needing to download at startup, restoring the original working approach.
+
+---
