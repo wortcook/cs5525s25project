@@ -406,12 +406,18 @@ module "sfilter_service" {
   labels                  = local.common_labels
   environment_variables   = {
     SECONDARY_MODEL = var.secondary_model_location
-    GCS_BUCKET_NAME = google_storage_bucket.model-store.name
-    MODEL_PATH_IN_BUCKET = "jailbreak-model"
     SFILTER_CONFIDENCE_THRESHOLD = var.sfilter_confidence_threshold
     ENABLE_REQUEST_LOGGING = var.enable_request_logging
     MAX_MESSAGE_LENGTH = var.max_message_length
   }
+  gcs_volume_mounts = [
+    {
+      name       = "model-storage"
+      bucket     = google_storage_bucket.model-store.name
+      mount_path = "/mnt/models"
+      read_only  = true
+    }
+  ]
   memory                  = var.sfilter_memory
   cpu                     = "2"
   depends_on              = [module.sfilter-build, google_project_service.project_apis, google_cloud_run_v2_job.model_downloader_job, google_storage_bucket_iam_member.run_service_agent_gcs_mount_access]

@@ -52,9 +52,9 @@ variable "secondary_model_name" {
 }
 
 variable "secondary_model_location" {
-  description = "The local path where the secondary model will be downloaded and stored."
+  description = "The path within the mounted GCS bucket where the secondary model is stored."
   type        = string
-  default     = "/app/models/jailbreak-model"
+  default     = "/mnt/models/jailbreak-model"
 }
 
 variable "llm_stub_port" {
