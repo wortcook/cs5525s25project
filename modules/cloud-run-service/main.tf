@@ -5,15 +5,6 @@ variable "region" {
   type        = string
 }
 
-# terraform {
-#   required_providers {
-#     google = {
-#       source  = "hashicorp/google"
-#       version = "~> 4.0"
-#     }
-#   }
-# }
-
 variable "service_name" {
   description = "Name of the Cloud Run service"
   type        = string

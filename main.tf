@@ -8,14 +8,7 @@
 # large language model (LLM) infrastructure
 # on Google Cloud Platform (GCP) using Terraform.
 #############################################
-terraform {
-  required_providers {
-    time = {
-      source  = "hashicorp/time"
-      version = "~> 0.9"
-    }
-  }
-}
+
 
 provider "google" {
   project = var.project
