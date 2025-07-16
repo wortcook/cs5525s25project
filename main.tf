@@ -418,8 +418,6 @@ module "bfilter_service" {
     ENABLE_REQUEST_LOGGING = var.enable_request_logging
     MAX_MESSAGE_LENGTH = var.max_message_length
   }
-  memory                  = "1Gi"
-  cpu                     = "1"
   depends_on              = [module.bfilter-build, google_project_service.project_apis, google_service_account.bfilter_sa, google_vpc_access_connector.bfilter-connector]
 }
 
