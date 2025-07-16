@@ -393,72 +393,72 @@ module "llm_stub_service" {
   depends_on              = [module.llm-stub-build, google_project_service.project_apis, google_service_account.llm_stub_sa, google_vpc_access_connector.llm-stub-connector]
 }
 
-# module "sfilter_service" {
-#   source                  = "./modules/cloud-run-service"
-#   service_name            = "sfilter-service"
-#   region                  = var.region
-#   image_name              = module.sfilter-build.image_name
-#   port                    = var.sfilter_port
-#   service_account_email   = google_service_account.sfilter_sa.email
-#   vpc_connector_id        = google_vpc_access_connector.bfilter-connector.id
-#   min_instances           = 1
-#   max_instances           = 10
-#   labels                  = local.common_labels
-#   environment_variables   = {
-#     SECONDARY_MODEL = "${var.model_mount_path}/${var.model_folder_name}"
-#     SFILTER_CONFIDENCE_THRESHOLD = var.sfilter_confidence_threshold
-#     ENABLE_REQUEST_LOGGING = var.enable_request_logging
-#     MAX_MESSAGE_LENGTH = var.max_message_length
-#   }
-#   gcs_bucket_name         = google_storage_bucket.model-store.name
-#   model_mount_path        = var.model_mount_path
-#   memory                  = var.sfilter_memory
-#   cpu                     = "2"
-#   depends_on              = [module.sfilter-build, google_project_service.project_apis, google_cloud_run_v2_job.model_downloader_job, google_storage_bucket_iam_member.run_service_agent_gcs_mount_access]
-# }
-
-resource "google_cloud_run_v2_service" "sfilter-service" {
-  name     = "sfilter-service"
-  location = "us-central1"
-  deletion_protection = false
-
-  ingress = "INGRESS_TRAFFIC_INTERNAL_ONLY"
-
-  template {
-    service_account = google_service_account.sfilter_sa.email
-    containers {
-      image = module.sfilter-build.image_name
-      ports {
-        container_port = var.sfilter_port
-      }
-      env {
-        name  = "SECONDARY_MODEL"
-        value = var.secondary_model_location
-      }
-
-      volume_mounts {
-          name       = "model-store-volume"
-          mount_path = "/storage/models"
-      }
-
-      resources {
-        limits = {
-          memory = "32Gi"
-          cpu    = "8"
-        }
-      }
-    }
-
-    volumes {
-      name = "model-store-volume"
-      gcs {
-        bucket    = google_storage_bucket.model-store.name
-        read_only = true # The service only needs to read the model.
-      }
-    }
+module "sfilter_service" {
+  source                  = "./modules/cloud-run-service"
+  service_name            = "sfilter-service"
+  region                  = var.region
+  image_name              = module.sfilter-build.image_name
+  port                    = var.sfilter_port
+  service_account_email   = google_service_account.sfilter_sa.email
+  vpc_connector_id        = google_vpc_access_connector.bfilter-connector.id
+  min_instances           = 1
+  max_instances           = 10
+  labels                  = local.common_labels
+  environment_variables   = {
+    SECONDARY_MODEL = "${var.model_mount_path}/${var.model_folder_name}"
+    SFILTER_CONFIDENCE_THRESHOLD = var.sfilter_confidence_threshold
+    ENABLE_REQUEST_LOGGING = var.enable_request_logging
+    MAX_MESSAGE_LENGTH = var.max_message_length
   }
-  depends_on = [module.sfilter-build, google_project_service.project_apis, google_cloud_run_v2_job.model_downloader_job, google_storage_bucket_iam_member.run_service_agent_gcs_mount_access]
+  gcs_bucket_name         = google_storage_bucket.model-store.name
+  model_mount_path        = var.model_mount_path
+  memory                  = var.sfilter_memory
+  cpu                     = "2"
+  depends_on              = [module.sfilter-build, google_project_service.project_apis, google_cloud_run_v2_job.model_downloader_job, google_storage_bucket_iam_member.run_service_agent_gcs_mount_access]
 }
+
+# resource "google_cloud_run_v2_service" "sfilter-service" {
+#   name     = "sfilter-service"
+#   location = "us-central1"
+#   deletion_protection = false
+
+#   ingress = "INGRESS_TRAFFIC_INTERNAL_ONLY"
+
+#   template {
+#     service_account = google_service_account.sfilter_sa.email
+#     containers {
+#       image = module.sfilter-build.image_name
+#       ports {
+#         container_port = var.sfilter_port
+#       }
+#       env {
+#         name  = "SECONDARY_MODEL"
+#         value = var.secondary_model_location
+#       }
+
+#       volume_mounts {
+#           name       = "model-store-volume"
+#           mount_path = "/storage/models"
+#       }
+
+#       resources {
+#         limits = {
+#           memory = "32Gi"
+#           cpu    = "8"
+#         }
+#       }
+#     }
+
+#     volumes {
+#       name = "model-store-volume"
+#       gcs {
+#         bucket    = google_storage_bucket.model-store.name
+#         read_only = true # The service only needs to read the model.
+#       }
+#     }
+#   }
+#   depends_on = [module.sfilter-build, google_project_service.project_apis, google_cloud_run_v2_job.model_downloader_job, google_storage_bucket_iam_member.run_service_agent_gcs_mount_access]
+# }
 
 module "bfilter_service" {
   source                  = "./modules/cloud-run-service"
