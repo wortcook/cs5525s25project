@@ -1,19 +1,20 @@
+
 import os
 import logging
-from huggingface_hub import snapshot_download
+import subprocess
 from google.cloud import storage
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def main():
     """
-    Downloads a model from Hugging Face and uploads it to a GCS bucket.
+    Clones a model repo from GitHub and uploads it to a GCS bucket.
     """
-    model_name = os.environ.get("HF_MODEL_NAME")
+    repo_url = os.environ.get("MODEL_GIT_URL")
     bucket_name = os.environ.get("GCS_BUCKET_NAME")
 
-    if not model_name:
-        logging.error("HF_MODEL_NAME environment variable not set.")
+    if not repo_url:
+        logging.error("MODEL_GIT_URL environment variable not set.")
         exit(1)
     if not bucket_name:
         logging.error("GCS_BUCKET_NAME environment variable not set.")
@@ -21,20 +22,19 @@ def main():
 
     local_dir = "/app/model"
     os.makedirs(local_dir, exist_ok=True)
-    
-    logging.info(f"Downloading model '{model_name}' from Hugging Face.")
-    
+
+    logging.info(f"Cloning model repo from '{repo_url}'...")
     try:
-        snapshot_download(repo_id=model_name, local_dir=local_dir, local_dir_use_symlinks=False, resume_download=True)
-        logging.info(f"Model downloaded to {local_dir}")
+        subprocess.run(["git", "clone", "--depth=1", repo_url, local_dir], check=True)
+        logging.info(f"Model repo cloned to {local_dir}")
     except Exception as e:
-        logging.error(f"Failed to download model: {e}")
+        logging.error(f"Failed to clone model repo: {e}")
         exit(1)
 
     storage_client = storage.Client()
     bucket = storage_client.bucket(bucket_name)
-    
-    model_folder_in_bucket = model_name.split("/")[-1]
+
+    model_folder_in_bucket = os.path.splitext(os.path.basename(repo_url))[0]
     logging.info(f"Uploading model to gs://{bucket_name}/{model_folder_in_bucket}/")
 
     for root, _, files in os.walk(local_dir):
@@ -44,7 +44,7 @@ def main():
             blob = bucket.blob(gcs_path)
             blob.upload_from_filename(local_path)
             logging.info(f"Uploaded {local_path} to gs://{bucket_name}/{gcs_path}")
-    
+
     logging.info("Model upload complete.")
 
 if __name__ == "__main__":

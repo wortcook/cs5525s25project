@@ -1,5 +1,9 @@
 
+
 FROM python:3.11-slim
+
+# Install git for model repo cloning
+RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
 #RUN groupadd -r appuser && useradd -r -g appuser appuser

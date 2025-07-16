@@ -235,7 +235,7 @@ resource "null_resource" "model-download" {
   triggers = {
     # Re-run the job if the job definition, model name, or container image changes.
     job_id     = google_cloud_run_v2_job.model_downloader_job.id
-    model_name = var.secondary_model_name
+    model_git_url = "https://github.com/wortcook/jailbreak-model.git"
     image_id   = module.model-downloader-build.image_id
   }
 
@@ -445,8 +445,8 @@ resource "google_cloud_run_v2_job" "model_downloader_job" {
       containers {
         image = module.model-downloader-build.image_name
         env {
-          name  = "HF_MODEL_NAME"
-          value = var.secondary_model_name
+          name  = "MODEL_GIT_URL"
+          value = "https://github.com/wortcook/jailbreak-model.git"
         }
         env {
           name  = "GCS_BUCKET_NAME"
