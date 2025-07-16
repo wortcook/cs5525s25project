@@ -26,6 +26,7 @@ def main():
     logging.info(f"Cloning model repo from '{repo_url}'...")
     try:
         subprocess.run(["git", "clone", "--depth=1", repo_url, local_dir], check=True)
+        subprocess.run(["git", "lfs", "pull"], cwd=local_dir, check=True)
         logging.info(f"Model repo cloned to {local_dir}")
     except Exception as e:
         logging.error(f"Failed to clone model repo: {e}")
