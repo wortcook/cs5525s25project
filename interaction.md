@@ -619,3 +619,43 @@ Review assistantPrompt.txt job description, then evaluate why bfilter would be u
 - Public access only to BFilter service as intended
 
 ---
+
+
+---
+
+## SFilter Model Path Validation
+
+**User Request**: "are you sure it's called jailbreak-model and not jail-break classifier? Please validate this and remember your job description"
+
+**Validation Process**: Traced the complete model path flow from GitHub to SFilter loading.
+
+**Path Analysis**:
+
+1. **GitHub Repository**: `https://github.com/wortcook/jailbreak-model.git`
+   - Repository name: `jailbreak-model`
+   - Repository title: "Jailbreak Classifier"
+   - Contains: pytorch_model.bin, config.json, tokenizer files
+
+2. **Model Downloader Logic**: `model-downloader/main.py`
+   - `repo_url = "https://github.com/wortcook/jailbreak-model.git"`
+   - `os.path.basename(repo_url)` = `"jailbreak-model.git"`
+   - `os.path.splitext("jailbreak-model.git")[0]` = `"jailbreak-model"`
+   - **GCS Upload Path**: `gs://bucket-name/jailbreak-model/`
+
+3. **GCS Volume Mount**: `modules/cloud-run-service/main.tf`
+   - Volume mounted at: `/mnt/models`
+   - Model accessible at: `/mnt/models/jailbreak-model/`
+
+4. **SFilter Configuration**: `variables.tf`
+   - **Corrected Path**: `/mnt/models/jailbreak-model`
+   - **Previous Incorrect**: `/mnt/models/jailbreak-classifier`
+
+**Fixes Applied**:
+- ✅ Added GCS volume mount support to Cloud Run service module
+- ✅ Configured SFilter service with GCS volume mount
+- ✅ Updated `secondary_model_location` variable to correct path
+- ✅ Verified path matches actual repository name
+
+**Result**: SFilter will now correctly load the model from `/mnt/models/jailbreak-model` where the GCS bucket contents are mounted.
+
+---

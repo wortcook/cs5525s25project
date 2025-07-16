@@ -81,6 +81,17 @@ variable "labels" {
   default     = {}
 }
 
+variable "gcs_volume_mounts" {
+  description = "GCS volume mounts for the container"
+  type = list(object({
+    name        = string
+    bucket      = string
+    mount_path  = string
+    read_only   = optional(bool, true)
+  }))
+  default = []
+}
+
 resource "google_cloud_run_v2_service" "service" {
   name     = var.service_name
   location = var.region
@@ -117,6 +128,25 @@ resource "google_cloud_run_v2_service" "service" {
         content {
           name  = env.key
           value = env.value
+        }
+      }
+      
+      dynamic "volume_mounts" {
+        for_each = var.gcs_volume_mounts
+        content {
+          name       = volume_mounts.value.name
+          mount_path = volume_mounts.value.mount_path
+        }
+      }
+    }
+    
+    dynamic "volumes" {
+      for_each = var.gcs_volume_mounts
+      content {
+        name = volumes.value.name
+        gcs {
+          bucket    = volumes.value.bucket
+          read_only = volumes.value.read_only
         }
       }
     }

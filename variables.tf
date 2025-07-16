@@ -54,7 +54,7 @@ variable "secondary_model_name" {
 variable "secondary_model_location" {
   description = "The path within the GCS bucket where the secondary model is stored."
   type        = string
-  default     = "/mnt/models/jailbreak-classifier"
+  default     = "/mnt/models/jailbreak-model"
 }
 
 variable "llm_stub_port" {

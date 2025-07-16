@@ -410,6 +410,14 @@ module "sfilter_service" {
     ENABLE_REQUEST_LOGGING = var.enable_request_logging
     MAX_MESSAGE_LENGTH = var.max_message_length
   }
+  gcs_volume_mounts = [
+    {
+      name       = "model-storage"
+      bucket     = google_storage_bucket.model-store.name
+      mount_path = "/mnt/models"
+      read_only  = true
+    }
+  ]
   memory                  = var.sfilter_memory
   cpu                     = "2"
   depends_on              = [module.sfilter-build, google_project_service.project_apis, google_cloud_run_v2_job.model_downloader_job, google_storage_bucket_iam_member.run_service_agent_gcs_mount_access]
