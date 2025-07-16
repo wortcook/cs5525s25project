@@ -37,7 +37,6 @@ locals {
     environment = var.environment
     managed_by  = "terraform"
     owner       = "cs5525-team"
-    created_at  = formatdate("YYYY-MM-DD", timestamp())
   }
 }
 
