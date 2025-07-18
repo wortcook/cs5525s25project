@@ -141,3 +141,15 @@ variable "model_folder_name" {
     error_message = "Model folder name must contain only alphanumeric characters, underscores, and hyphens."
   }
 }
+
+variable "filter_subnet" {
+  description = "Subnet for the filter services"
+  type        = string
+  default     = "10.0.1.0/28"
+}
+
+variable "llm_subnet" {
+  description = "Subnet for the LLM stub service"
+  type        = string
+  default     = "10.0.2.0/28"
+}

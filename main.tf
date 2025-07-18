@@ -50,7 +50,7 @@ resource "google_compute_network" "llm-vpc" {
 
 resource "google_compute_subnetwork" "llm-vpc-filter-subnet" {
   name          = "llm-vpc-filter-subnet"
-  ip_cidr_range = "10.0.1.0/28" # Increased subnet size
+  ip_cidr_range = var.filter_subnet
   region        = var.region
   private_ip_google_access = true
   network       = google_compute_network.llm-vpc.id
@@ -72,8 +72,8 @@ resource "time_sleep" "wait_for_ip_release" {
 
 resource "google_compute_subnetwork" "llmstub-subnet" {
   name          = "llmstub-subnet"
-  ip_cidr_range = "10.0.2.0/28" # Choose an appropriate IP range
-  region        = "us-central1"  # Match your project's region
+  ip_cidr_range = var.llm_subnet
+  region        = var.region # Match your project's region
   network       = google_compute_network.llm-vpc.id
 
   # Enable Private Google Access (optional, but recommended)
@@ -115,11 +115,10 @@ resource "google_compute_firewall" "allow-internal-llmstub" {
 
   allow {
     protocol = "tcp"
-    ports    = ["8082"] # Assuming llmstub listens on port 8082, adjust as needed
+    ports    = [var.llm_stub_port] # Assuming llmstub listens on port 8082, adjust as needed
   }
 
   source_ranges = ["10.0.0.0/28", "10.0.2.0/28"] # Allow traffic from main subnet and llmstub-subnet
-  target_tags   = ["http-server"] # Or any relevant target tag for your service
 }
 
 ###############
@@ -360,7 +359,7 @@ module "bfilter-build" {
 
 resource "google_vpc_access_connector" "llm-stub-connector" {
   name          = "llm-stub-${random_id.connector_suffix.dec}"
-  region        = "us-central1"
+  region        = var.region
   min_instances = 2
   max_instances = 8
   subnet {
