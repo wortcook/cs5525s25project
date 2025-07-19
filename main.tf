@@ -268,6 +268,41 @@ resource "null_resource" "model-download" {
   depends_on = [google_cloud_run_v2_job.model_downloader_job]
 }
 
+# Model downloader job to fetch the secondary model from a Git repository
+resource "google_cloud_run_v2_job" "model_downloader_job" {
+  name     = "model-downloader-job"
+  location = var.region
+  project  = var.project
+  deletion_protection = false
+
+  template {
+    template {
+      service_account = google_service_account.model_downloader_sa.email
+      containers {
+        image = module.model-downloader-build.image_name
+        env {
+          name  = "MODEL_GIT_URL"
+          value = var.model_git_url
+        }
+        env {
+          name  = "GCS_BUCKET_NAME"
+          value = google_storage_bucket.model-store.name
+        }
+        resources {
+          limits = {
+            memory = "4Gi"
+            cpu    = "2"
+          }
+        }
+      }
+      timeout = "3600s" # 1 hour
+      max_retries = 5
+    }
+  }
+  depends_on = [module.model-downloader-build, google_storage_bucket_iam_member.model_downloader_gcs_writer]
+}
+
+
 
 ###############################################
 # SERVICE ACCOUNTS & PERMISSIONS
@@ -551,40 +586,13 @@ resource "google_cloud_run_v2_service_iam_member" "bfilter_public_invoker" {
   member   = "allUsers"
 }
 
-resource "google_cloud_run_v2_job" "model_downloader_job" {
-  name     = "model-downloader-job"
-  location = var.region
-  project  = var.project
-  deletion_protection = false
 
-  template {
-    template {
-      service_account = google_service_account.model_downloader_sa.email
-      containers {
-        image = module.model-downloader-build.image_name
-        env {
-          name  = "MODEL_GIT_URL"
-          value = var.model_git_url
-        }
-        env {
-          name  = "GCS_BUCKET_NAME"
-          value = google_storage_bucket.model-store.name
-        }
-        resources {
-          limits = {
-            memory = "4Gi"
-            cpu    = "2"
-          }
-        }
-      }
-      timeout = "3600s" # 1 hour
-      max_retries = 5
-    }
-  }
-  depends_on = [module.model-downloader-build, google_storage_bucket_iam_member.model_downloader_gcs_writer]
-}
-
+##############################################
 #PUB-SUB CHANNEL
+##############################################
+
+# Create topic for secondary filter events.
+# This topic will be used to publish events from the bfilter service.
 resource "google_pubsub_topic" "secondary_filter_topic" {
   name    = "secondary-filter"
   project = var.project
@@ -592,12 +600,7 @@ resource "google_pubsub_topic" "secondary_filter_topic" {
   depends_on = [google_project_service.project_apis]
 }
 
-# Example subscription (optional):
-# resource "google_pubsub_subscription" "secondary_filter_subscription" {
-#   name  = "secondary-filter-sub"
-#   topic = google_pubsub_topic.secondary_filter_topic.name
-# }
-
+# Grant the bfilter service account permission to publish to the secondary filter topic.
 resource "google_pubsub_topic_iam_member" "bfilter_publishes_to_secondary_filter" {
   project = var.project
   topic   = google_pubsub_topic.secondary_filter_topic.name
@@ -606,6 +609,7 @@ resource "google_pubsub_topic_iam_member" "bfilter_publishes_to_secondary_filter
 
   depends_on = [google_pubsub_topic.secondary_filter_topic, google_service_account.bfilter_sa]
 }
+
 
 
 resource "google_storage_bucket_iam_member" "pubsub_to_bucket_reader" {
