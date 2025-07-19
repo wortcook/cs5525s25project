@@ -116,6 +116,20 @@ resource "google_vpc_access_connector" "bfilter-connector" {
   depends_on = [google_project_service.project_apis, time_sleep.wait_for_ip_release]
 }
 
+# VPC Access Connector for the LLM stub service.
+# Allows the bfilter service to access the LLM stub service
+# within the subset without making it publicly accessible.
+resource "google_vpc_access_connector" "llm-stub-connector" {
+  name          = "llm-stub-${random_id.connector_suffix.dec}"
+  region        = var.region
+  min_instances = 2
+  max_instances = 8
+  subnet {
+    name = google_compute_subnetwork.llmstub-subnet.name
+  }
+}
+
+
 
 ###############################
 # STORAGE
@@ -254,24 +268,12 @@ resource "null_resource" "model-download" {
   depends_on = [google_cloud_run_v2_job.model_downloader_job]
 }
 
-# # Allows the model downloader job to access the repository
-# resource "google_artifact_registry_repository_iam_member" "builder_push_access" {
-#   project    = var.project
-#   location   = var.region
-#   repository = var.docker_repository_name
-#   role       = "roles/artifactregistry.writer"
-#   member     = "serviceAccount:${google_service_account.model_downloader_sa.email}" # Adjust as needed!
 
-#   depends_on = [google_project_service.project_apis]
-# }
-
-
-
-
-###############
+###############################################
 # SERVICE ACCOUNTS & PERMISSIONS
-###############
+###############################################
 
+# Service account for the LLM stub service.
 resource "google_service_account" "llm_stub_sa" {
   account_id   = "llm-stub-sa"
   display_name = "LLM Stub Service Account"
@@ -279,6 +281,7 @@ resource "google_service_account" "llm_stub_sa" {
   depends_on   = [google_project_service.project_apis]
 }
 
+#Service account for the sfilter service.
 resource "google_service_account" "sfilter_sa" {
   account_id   = "sfilter-sa"
   display_name = "SFilter Service Account"
@@ -305,6 +308,7 @@ resource "google_storage_bucket_iam_member" "run_service_agent_gcs_mount_access"
   depends_on = [google_project_service.project_apis] # Ensures the Run API is enabled, which creates the service agent.
 }
 
+#Service account for the bfilter service.
 resource "google_service_account" "bfilter_sa" {
   account_id   = "bfilter-sa"
   display_name = "BFilter Service Account"
@@ -337,9 +341,12 @@ resource "google_project_iam_member" "bfilter_pubsub_publisher" {
   member  = "serviceAccount:${google_service_account.bfilter_sa.email}"
 }
 
-###############
-# SERVICE WORKERS
-###############
+
+#################################################
+# SERVICE CONTAINER BUILDS
+#################################################
+
+# LLM stub service build module.
 module "llm-stub-build" {
   source     = "./llmstub"
   project_id = var.project
@@ -348,6 +355,7 @@ module "llm-stub-build" {
   depends_on = [google_project_service.project_apis]
 }
 
+# SFilter service build module.
 module "sfilter-build" {
   source       = "./sfilter"
   project_id = var.project
@@ -357,6 +365,7 @@ module "sfilter-build" {
 
 }
 
+# BFilter service build module.
 module "bfilter-build" {
   source       = "./bfilter"
   project_id = var.project
@@ -365,16 +374,7 @@ module "bfilter-build" {
   depends_on = [google_project_service.project_apis]
 }
 
-resource "google_vpc_access_connector" "llm-stub-connector" {
-  name          = "llm-stub-${random_id.connector_suffix.dec}"
-  region        = var.region
-  min_instances = 2
-  max_instances = 8
-  subnet {
-    name = google_compute_subnetwork.llmstub-subnet.name
-  }
-}
-
+# LLM stub service definition.
 resource "google_cloud_run_v2_service" "llm-stub-service" {
   name     = "llm-stub-service"
   location = var.region
@@ -409,6 +409,7 @@ resource "google_cloud_run_v2_service" "llm-stub-service" {
   depends_on = [module.llm-stub-build, google_project_service.project_apis, google_service_account.llm_stub_sa, google_vpc_access_connector.llm-stub-connector]
 }
 
+# SFilter service definition.
 resource "google_cloud_run_v2_service" "sfilter-service" {
   name     = "sfilter-service"
   location = var.region
@@ -483,7 +484,7 @@ resource "google_cloud_run_v2_service" "sfilter-service" {
 }
 
 
-
+# BFilter service definition.
 resource "google_cloud_run_v2_service" "bfilter-service" {
   name     = "bfilter-service"
   location = var.region
@@ -528,15 +529,6 @@ resource "google_cloud_run_v2_service" "bfilter-service" {
         name  = "MAX_MESSAGE_LENGTH"
         value = var.max_message_length
       }
-
-      # resources {
-      #   limits = {
-      #     memory = "4Gi"
-      #     cpu    = "2"
-      #   }
-      #   cpu_idle = true
-      #   startup_cpu_boost = true
-      # }
     }
     
     vpc_access {
