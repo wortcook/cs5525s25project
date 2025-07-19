@@ -14,7 +14,6 @@ provider "google" {
   project = var.project
   region  = var.region
   zone    = var.zone
-  #  credentials = file("thomasjones-llm-project-2025-7725b32a4ec0.json")
 }
 
 data "google_project" "project" {
@@ -108,23 +107,6 @@ resource "google_compute_firewall" "default" {
     ports    = ["80", "443"] # Allow HTTP and HTTPS
   }
 }
-
-resource "google_compute_firewall" "allow-internal-llmstub" {
-  name    = "allow-internal-llmstub"
-  network = google.google_compute_subnetwork.llmstub-subnet.name
-  direction = "INGRESS"
-  allow {
-    protocol = "tcp"
-    ports    = [var.llm_stub_port] # Assuming llmstub listens on port 8082, adjust as needed
-  }
-
-  source_ranges = [var.filter_subnet]
-}
-
-###############
-# PUB/SUB
-###############
-# Removed duplicate - using secondary_filter_topic below instead
 
 ###############
 # STORAGE
@@ -390,15 +372,6 @@ resource "google_cloud_run_v2_service" "llm-stub-service" {
       ports {
         container_port = var.llm_stub_port
       }
-
-      # resources {
-      #   limits = {
-      #     memory = "1Gi"
-      #     cpu    = "1"
-      #   }
-      #   cpu_idle = true
-      #   startup_cpu_boost = true
-      # }
     }
     
     vpc_access {
@@ -498,7 +471,7 @@ resource "google_cloud_run_v2_service" "bfilter-service" {
     service_account = google_service_account.bfilter_sa.email
     
     scaling {
-      min_instance_count = 1
+      min_instance_count = 2
       max_instance_count = 10
     }
     
@@ -530,14 +503,14 @@ resource "google_cloud_run_v2_service" "bfilter-service" {
         value = var.max_message_length
       }
 
-      resources {
-        limits = {
-          memory = "4Gi"
-          cpu    = "2"
-        }
-        cpu_idle = true
-        startup_cpu_boost = true
-      }
+      # resources {
+      #   limits = {
+      #     memory = "4Gi"
+      #     cpu    = "2"
+      #   }
+      #   cpu_idle = true
+      #   startup_cpu_boost = true
+      # }
     }
     
     vpc_access {
@@ -573,7 +546,7 @@ resource "google_cloud_run_v2_job" "model_downloader_job" {
         image = module.model-downloader-build.image_name
         env {
           name  = "MODEL_GIT_URL"
-          value = "https://github.com/wortcook/jailbreak-model.git"
+          value = var.model_git_url
         }
         env {
           name  = "GCS_BUCKET_NAME"
@@ -655,96 +628,6 @@ resource "google_pubsub_subscription" "secondary_filter_subscription" {
     google_storage_bucket_iam_member.pubsub_to_bucket_reader
    ]
 }
-
-# Cloud Monitoring - Health Check Uptime Checks
-# resource "google_monitoring_uptime_check_config" "bfilter_health_check" {
-#   display_name = "BFilter Health Check"
-#   timeout      = "10s"
-#   period       = "60s"
-
-#   synthetic_monitor {
-#     cloud_function_v2 {
-#       name = google_cloud_run_v2_service.bfilter-service.id
-#     }
-
-# }
-
-# resource "google_monitoring_uptime_check_config" "llmstub_health_check" {
-#   display_name = "LLMStub Health Check"
-#   timeout      = "10s"
-#   period       = "60s"
-
-#   synthetic_monitor {
-#     cloud_function_v2 {
-#       name = google_cloud_run_v2_service.llm-stub-service.id
-#     }
-#   }
-
-#   depends_on = [google_cloud_run_v2_service.llm-stub-service]
-# }
-
-# Alert Policy for Service Health
-# resource "google_monitoring_alert_policy" "service_health_alert" {
-#   display_name = "LLM Infrastructure Service Health Alert"
-#   combiner     = "OR"
-  
-#   conditions {
-#     display_name = "BFilter Service Down"
-#     condition_threshold {
-#       filter          = "metric.type=\"monitoring.googleapis.com/uptime_check/check_passed\" AND resource.type=\"uptime_url\""
-#       duration        = "300s"
-#       comparison      = "COMPARISON_EQ"
-#       threshold_value = 0
-      
-#       aggregations {
-#         alignment_period   = "60s"
-#         per_series_aligner = "ALIGN_NEXT_OLDER"
-#       }
-#     }
-#   }
-
-#   conditions {
-#     display_name = "SFilter Service Down"
-#     condition_threshold {
-#       filter          = "metric.type=\"monitoring.googleapis.com/uptime_check/check_passed\" AND resource.type=\"uptime_url\""
-#       duration        = "300s"
-#       comparison      = "COMPARISON_EQ"
-#       threshold_value = 0
-      
-#       aggregations {
-#         alignment_period   = "60s"
-#         per_series_aligner = "ALIGN_NEXT_OLDER"
-#       }
-#     }
-#   }
-
-#   conditions {
-#     display_name = "LLMStub Service Down"
-#     condition_threshold {
-#       filter          = "metric.type=\"monitoring.googleapis.com/uptime_check/check_passed\" AND resource.type=\"uptime_url\""
-#       duration        = "300s"
-#       comparison      = "COMPARISON_EQ"
-#       threshold_value = 0
-      
-#       aggregations {
-#         alignment_period   = "60s"
-#         per_series_aligner = "ALIGN_NEXT_OLDER"
-#       }
-#     }
-#   }
-
-#   notification_channels = [google_monitoring_notification_channel.email_alert.name]
-
-#   alert_strategy {
-#     auto_close = "1800s"  # Auto-close after 30 minutes
-#   }
-
-#   depends_on = [
-#     google_monitoring_uptime_check_config.bfilter_health_check,
-#     google_monitoring_uptime_check_config.sfilter_health_check,
-#     google_monitoring_uptime_check_config.llmstub_health_check
-#   ]
-# }
 
 # Email notification channel (you'll need to replace with actual email)
 resource "google_monitoring_notification_channel" "email_alert" {

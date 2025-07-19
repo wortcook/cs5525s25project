@@ -153,3 +153,9 @@ variable "llm_subnet" {
   type        = string
   default     = "10.0.2.0/28"
 }
+
+variable model_git_url {
+  description = "Git URL for the model repository"
+  type        = string
+  default     = "https://github.com/wortcook/jailbreak-model.git"
+}
