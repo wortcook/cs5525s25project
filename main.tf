@@ -67,7 +67,7 @@ resource "google_compute_subnetwork" "llm-vpc-filter-subnet" {
   name          = "llm-vpc-filter-subnet"
   ip_cidr_range = var.filter_subnet
   region        = var.region
-  # private_ip_google_access = true
+  private_ip_google_access = true
   network       = google_compute_network.llm-vpc.id
 }
 
@@ -88,7 +88,7 @@ resource "google_compute_subnetwork" "llmstub-subnet" {
   region        = var.region # Match your project's region
   network       = google_compute_network.llm-vpc.id
 
-  # private_ip_google_access = true
+  private_ip_google_access = true
 
   depends_on = [google_project_service.project_apis, time_sleep.wait_for_ip_release]
 }
