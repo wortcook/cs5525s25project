@@ -119,15 +119,15 @@ resource "google_vpc_access_connector" "bfilter-connector" {
 # VPC Access Connector for the LLM stub service.
 # Allows the bfilter service to access the LLM stub service
 # within the subset without making it publicly accessible.
-resource "google_vpc_access_connector" "llm-stub-connector" {
-  name          = "llm-stub-${random_id.connector_suffix.dec}"
-  region        = var.region
-  min_instances = 2
-  max_instances = 8
-  subnet {
-    name = google_compute_subnetwork.llmstub-subnet.name
-  }
-}
+# resource "google_vpc_access_connector" "llm-stub-connector" {
+#   name          = "llm-stub-${random_id.connector_suffix.dec}"
+#   region        = var.region
+#   min_instances = 2
+#   max_instances = 8
+#   subnet {
+#     name = google_compute_subnetwork.llmstub-subnet.name
+#   }
+# }
 
 
 
@@ -400,13 +400,14 @@ resource "google_cloud_run_v2_service" "llm-stub-service" {
       }
     }
     
-    vpc_access {
-      connector = google_vpc_access_connector.llm-stub-connector.id
-      egress    = "ALL_TRAFFIC"
-    }
+    # vpc_access {
+    #   connector = google_vpc_access_connector.llm-stub-connector.id
+    #   egress    = "ALL_TRAFFIC"
+    # }
   }
   
-  depends_on = [module.llm-stub-build, google_project_service.project_apis, google_service_account.llm_stub_sa, google_vpc_access_connector.llm-stub-connector]
+  # depends_on = [module.llm-stub-build, google_project_service.project_apis, google_service_account.llm_stub_sa, google_vpc_access_connector.llm-stub-connector]
+  depends_on = [module.llm-stub-build, google_project_service.project_apis, google_service_account.llm_stub_sa]
 }
 
 # SFilter service definition.
