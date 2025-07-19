@@ -228,6 +228,7 @@ resource "google_storage_bucket_iam_member" "model_downloader_gcs_writer" {
 }
 
 
+# Module containing container build logic for the model downloader job.
 module "model-downloader-build" {
   source     = "./model-downloader"
   project_id = var.project
@@ -235,6 +236,8 @@ module "model-downloader-build" {
   # Ensure Artifact Registry API is enabled before building/pushing images.
   depends_on = [google_project_service.project_apis] # Ensure VPC Access API is also enabled
 }
+
+# This resource triggers the model downloader job to run.
 resource "null_resource" "model-download" {
   triggers = {
     # Re-run the job if the job definition, model name, or container image changes.
@@ -251,15 +254,16 @@ resource "null_resource" "model-download" {
   depends_on = [google_cloud_run_v2_job.model_downloader_job]
 }
 
-resource "google_artifact_registry_repository_iam_member" "builder_push_access" {
-  project    = var.project
-  location   = var.region
-  repository = var.docker_repository_name
-  role       = "roles/artifactregistry.writer"
-  member     = "serviceAccount:${google_service_account.model_downloader_sa.email}" # Adjust as needed!
+# # Allows the model downloader job to access the repository
+# resource "google_artifact_registry_repository_iam_member" "builder_push_access" {
+#   project    = var.project
+#   location   = var.region
+#   repository = var.docker_repository_name
+#   role       = "roles/artifactregistry.writer"
+#   member     = "serviceAccount:${google_service_account.model_downloader_sa.email}" # Adjust as needed!
 
-  depends_on = [google_project_service.project_apis]
-}
+#   depends_on = [google_project_service.project_apis]
+# }
 
 
 
