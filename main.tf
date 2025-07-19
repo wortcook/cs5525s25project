@@ -14,8 +14,8 @@ provider "google" {
   zone    = var.zone
 }
 
-# data "google_project" "project" {
-# }
+data "google_project" "project" {
+}
 
 # APIs used for the project. The terraform script
 # will ensure these APIs are enabled before creating resources.
