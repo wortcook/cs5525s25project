@@ -159,3 +159,40 @@ variable model_git_url {
   type        = string
   default     = "https://github.com/wortcook/jailbreak-model.git"
 }
+
+variable bfilter_min_instances {
+  description = "Minimum number of instances for the BFilter service"
+  type        = number
+  default     = 2
+}
+
+variable bfilter_max_instances {
+  description = "Maximum number of instances for the BFilter service"
+  type        = number
+  default     = 8
+}
+
+variable sfilter_min_instances {
+  description = "Minimum number of instances for the SFilter service"
+  type        = number
+  default     = 2
+}
+
+variable sfilter_max_instances {
+  description = "Maximum number of instances for the SFilter service"
+  type        = number
+  default     = 8
+}
+
+variable llm_stub_min_instances {
+  description = "Minimum number of instances for the LLM stub service"
+  type        = number
+  default     = 2
+} 
+
+variable llm_stub_max_instances {
+  description = "Maximum number of instances for the LLM stub service"
+  type        = number
+  default     = 8
+}
+

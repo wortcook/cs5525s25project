@@ -8,17 +8,19 @@
 # large language model (LLM) infrastructure
 # on Google Cloud Platform (GCP) using Terraform.
 #############################################
-
-
 provider "google" {
   project = var.project
   region  = var.region
   zone    = var.zone
 }
 
-data "google_project" "project" {
-}
+# data "google_project" "project" {
+# }
 
+# APIs used for the project. The terraform script
+# will ensure these APIs are enabled before creating resources.
+# They are not disabled on destroy to prevent issues with other
+# projects that might be running on the same GCP account.
 resource "google_project_service" "project_apis" {
   project  = var.project
   for_each = toset([
@@ -37,65 +39,16 @@ resource "google_project_service" "project_apis" {
   disable_dependent_services = false
 }
 
+# VPC network for the LLM infrastructure.
 resource "google_compute_network" "llm-vpc" {
   name                    = "llm-vpc"
   auto_create_subnetworks = false
   mtu                     = 1460
 
-  # Ensure the Compute API is enabled before creating the network.
-  # depends_on = [google_project_service.project_apis, null_resource.compute_api_retry]
   depends_on = [google_project_service.project_apis]
 }
 
-resource "google_compute_subnetwork" "llm-vpc-filter-subnet" {
-  name          = "llm-vpc-filter-subnet"
-  ip_cidr_range = var.filter_subnet
-  region        = var.region
-  private_ip_google_access = true
-  network       = google_compute_network.llm-vpc.id
-
-  # The bfilter-service implicitly depends on this subnet. The service
-  # in turn depends on the time_sleep resource, which depends on this subnet,
-  # creating the correct destroy order to prevent race conditions.
-}
-
-resource "time_sleep" "wait_for_ip_release" {
-  # This resource introduces a delay between the destruction of the Cloud Run
-  # service and the subnetwork it uses. This prevents a race condition where
-  # Terraform tries to delete the subnetwork while its IP is still reserved
-  # by the Serverless VPC Access connector.
-  destroy_duration = "60s"
-
-  depends_on = [google_compute_subnetwork.llm-vpc-filter-subnet]
-}
-
-resource "google_compute_subnetwork" "llmstub-subnet" {
-  name          = "llmstub-subnet"
-  ip_cidr_range = var.llm_subnet
-  region        = var.region # Match your project's region
-  network       = google_compute_network.llm-vpc.id
-
-  # Enable Private Google Access (optional, but recommended)
-  private_ip_google_access = true
-
-  depends_on = [google_project_service.project_apis, time_sleep.wait_for_ip_release]
-}
-
-resource "random_id" "connector_suffix" {
-  byte_length = 4  # Generates 16 hex characters
-}
-
-resource "google_vpc_access_connector" "bfilter-connector" {
-  name          = "bfilter-${random_id.connector_suffix.dec}"
-  region        = var.region
-  min_instances = 2
-  max_instances = 8
-  subnet {
-    name = google_compute_subnetwork.llm-vpc-filter-subnet.name
-  }
-  depends_on = [google_project_service.project_apis, time_sleep.wait_for_ip_release]
-}
-
+# Firewall rule to allow HTTP and HTTPS traffic to the VPC network.
 resource "google_compute_firewall" "default" {
   name        = "allow-http-https-ingress"
   network     = google_compute_network.llm-vpc.name # Reference the custom VPC network
@@ -108,9 +61,68 @@ resource "google_compute_firewall" "default" {
   }
 }
 
-###############
+
+# Subnetwork for the filter services, bfilter and sfilter.
+resource "google_compute_subnetwork" "llm-vpc-filter-subnet" {
+  name          = "llm-vpc-filter-subnet"
+  ip_cidr_range = var.filter_subnet
+  region        = var.region
+  # private_ip_google_access = true
+  network       = google_compute_network.llm-vpc.id
+}
+
+
+# This resource introduces a delay between the destruction of the Cloud Run
+# service and the subnetwork it uses. This prevents a race condition where
+# Terraform tries to delete the subnetwork while its IP is still reserved
+# by the Serverless VPC Access connector.
+resource "time_sleep" "wait_for_ip_release" {
+  destroy_duration = "60s"
+  depends_on = [google_compute_subnetwork.llm-vpc-filter-subnet]
+}
+
+# Subnetwork for the LLM stub service.
+resource "google_compute_subnetwork" "llmstub-subnet" {
+  name          = "llmstub-subnet"
+  ip_cidr_range = var.llm_subnet
+  region        = var.region # Match your project's region
+  network       = google_compute_network.llm-vpc.id
+
+  # private_ip_google_access = true
+
+  depends_on = [google_project_service.project_apis, time_sleep.wait_for_ip_release]
+}
+
+# Generate a random suffix for the VPC Access Connector names to ensure uniqueness.
+resource "random_id" "connector_suffix" {
+  byte_length = 4  # Generates 16 hex characters
+}
+
+# VPC Access Connector for the filter services (bfilter and sfilter).
+# The random suffix ensures that multiple runs of the script do not
+# conflict with each other. Destroying connectors can take time, so
+# by making the names random, we avoid potential naming collisions
+# when the script is run multiple times.
+# This allows the Cloud Run services to access other Cloud Run services
+# and other resources in the VPC network without needing to make them publicly accessible.
+resource "google_vpc_access_connector" "bfilter-connector" {
+  name          = "bfilter-${random_id.connector_suffix.dec}"
+  region        = var.region
+  min_instances = var.bfilter_min_instances
+  max_instances = var.bfilter_max_instances
+  subnet {
+    name = google_compute_subnetwork.llm-vpc-filter-subnet.name
+  }
+  depends_on = [google_project_service.project_apis, time_sleep.wait_for_ip_release]
+}
+
+
+###############################
 # STORAGE
-###############
+###############################
+
+# Storage bucket for model storage so that the sfilter services 
+# can access the model files.
 resource "google_storage_bucket" "model-store" {
   name     = "model-store-${var.project}"
   location = var.region
@@ -148,6 +160,10 @@ resource "google_storage_bucket" "model-store" {
   depends_on = [google_project_service.project_apis]
 }
 
+# Secondary storage bucket for storing secondary filter events.
+# Note, we are using a bucket for this project to simplify the
+# architecture. In a production system, you might want to
+# use a more structured storage solution like BigQuery or Firestore.
 resource "google_storage_bucket" "secondary-spam" {
   name     = "secondary-spam-${var.project}"
   location = var.region
@@ -186,16 +202,12 @@ resource "google_storage_bucket" "secondary-spam" {
 }
 
 
-###############
-# MODEL DOWNLOADER
-###############
-module "model-downloader-build" {
-  source     = "./model-downloader"
-  project_id = var.project
+###############################
+# MODEL DOWNLOAD JOB
+###############################
 
-  # Ensure Artifact Registry API is enabled before building/pushing images.
-  depends_on = [google_project_service.project_apis] # Ensure VPC Access API is also enabled
-}
+# Model downloader job to fetch the secondary model from a Git repository
+# The job files are located in the `model-downloader` module.
 
 resource "google_service_account" "model_downloader_sa" {
   account_id   = "model-downloader-sa"
@@ -212,6 +224,14 @@ resource "google_storage_bucket_iam_member" "model_downloader_gcs_writer" {
   member = "serviceAccount:${google_service_account.model_downloader_sa.email}"
 }
 
+
+module "model-downloader-build" {
+  source     = "./model-downloader"
+  project_id = var.project
+
+  # Ensure Artifact Registry API is enabled before building/pushing images.
+  depends_on = [google_project_service.project_apis] # Ensure VPC Access API is also enabled
+}
 resource "null_resource" "model-download" {
   triggers = {
     # Re-run the job if the job definition, model name, or container image changes.
