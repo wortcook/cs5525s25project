@@ -196,3 +196,9 @@ variable llm_stub_max_instances {
   default     = 8
 }
 
+variable docker_repository_name{
+  description = "Name of the Artifact Registry repository for Docker images"
+  type        = string
+  default     = "llm-project"
+}
+  

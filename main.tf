@@ -209,6 +209,8 @@ resource "google_storage_bucket" "secondary-spam" {
 # Model downloader job to fetch the secondary model from a Git repository
 # The job files are located in the `model-downloader` module.
 
+
+# Service account for the model downloader job.
 resource "google_service_account" "model_downloader_sa" {
   account_id   = "model-downloader-sa"
   display_name = "Model Downloader Service Account"
@@ -218,6 +220,7 @@ resource "google_service_account" "model_downloader_sa" {
   depends_on = [google_project_service.project_apis]
 }
 
+# Grant the model downloader service account permission to write to the model storage bucket.
 resource "google_storage_bucket_iam_member" "model_downloader_gcs_writer" {
   bucket = google_storage_bucket.model-store.name
   role   = "roles/storage.objectAdmin"
@@ -236,7 +239,7 @@ resource "null_resource" "model-download" {
   triggers = {
     # Re-run the job if the job definition, model name, or container image changes.
     job_id     = google_cloud_run_v2_job.model_downloader_job.id
-    model_git_url = "https://github.com/wortcook/jailbreak-model.git"
+    model_git_url = var.model_git_url
     image_id   = module.model-downloader-build.image_id
   }
 
@@ -248,20 +251,19 @@ resource "null_resource" "model-download" {
   depends_on = [google_cloud_run_v2_job.model_downloader_job]
 }
 
-# Assuming your Artifact Registry repository is named "llm-project"
-# and is in the same project and region as specified in your variables.
-#  **Adapt the following to match the actual repository details if different.**
 resource "google_artifact_registry_repository_iam_member" "builder_push_access" {
   project    = var.project
   location   = var.region
-  repository = "llm-project"  # Replace with your actual repository name
+  repository = var.docker_repository_name
   role       = "roles/artifactregistry.writer"
-  # Replace with the actual service account email used by your build process.
-  # If it's in a module, you might need to output the service account email from the module.
   member     = "serviceAccount:${google_service_account.model_downloader_sa.email}" # Adjust as needed!
 
   depends_on = [google_project_service.project_apis]
 }
+
+
+
+
 ###############
 # SERVICE ACCOUNTS & PERMISSIONS
 ###############
