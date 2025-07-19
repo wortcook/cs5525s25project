@@ -111,14 +111,14 @@ resource "google_compute_firewall" "default" {
 
 resource "google_compute_firewall" "allow-internal-llmstub" {
   name    = "allow-internal-llmstub"
-  network = google_compute_network.llm-vpc.name
-
+  network = google.google_compute_subnetwork.llmstub-subnet.name
+  direction = "INGRESS"
   allow {
     protocol = "tcp"
     ports    = [var.llm_stub_port] # Assuming llmstub listens on port 8082, adjust as needed
   }
 
-  source_ranges = ["10.0.0.0/28", "10.0.2.0/28"] # Allow traffic from main subnet and llmstub-subnet
+  source_ranges = [var.filter_subnet]
 }
 
 ###############
