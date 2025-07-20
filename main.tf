@@ -39,6 +39,20 @@ resource "google_project_service" "project_apis" {
   disable_dependent_services = false
 }
 
+# This resource introduces a delay between the destruction of the Cloud Run
+# service and the subnetwork it uses. This prevents a race condition where
+# Terraform tries to delete the subnetwork while its IP is still reserved
+# by the Serverless VPC Access connector.
+resource "time_sleep" "wait_for_ip_release" {
+  destroy_duration = "60s"
+  depends_on = [google_compute_subnetwork.llm-vpc-filter-subnet]
+}
+
+
+###############################################
+# NETWORKING
+###############################################
+
 # VPC network for the LLM infrastructure.
 resource "google_compute_network" "llm-vpc" {
   name                    = "llm-vpc"
@@ -52,7 +66,7 @@ resource "google_compute_network" "llm-vpc" {
 resource "google_compute_firewall" "default" {
   name        = "allow-http-https-ingress"
   network     = google_compute_network.llm-vpc.name # Reference the custom VPC network
-  priority    = 1000 # Lower number means higher priority
+  priority    = 100 # Lower number means higher priority
   direction   = "INGRESS"
   source_ranges = ["0.0.0.0/0"] # Allow HTTP/HTTPS from any source
   allow {
@@ -71,15 +85,6 @@ resource "google_compute_subnetwork" "llm-vpc-filter-subnet" {
   network       = google_compute_network.llm-vpc.id
 }
 
-
-# This resource introduces a delay between the destruction of the Cloud Run
-# service and the subnetwork it uses. This prevents a race condition where
-# Terraform tries to delete the subnetwork while its IP is still reserved
-# by the Serverless VPC Access connector.
-resource "time_sleep" "wait_for_ip_release" {
-  destroy_duration = "60s"
-  depends_on = [google_compute_subnetwork.llm-vpc-filter-subnet]
-}
 
 # Subnetwork for the LLM stub service.
 resource "google_compute_subnetwork" "llmstub-subnet" {
@@ -147,24 +152,6 @@ resource "google_storage_bucket" "model-store" {
 
   uniform_bucket_level_access = true
 
-  lifecycle_rule {
-    condition {
-      age = 90
-    }
-    action {
-      type = "Delete"
-    }
-  }
-
-  lifecycle_rule {
-    condition {
-      age = 30
-    }
-    action {
-      type          = "SetStorageClass"
-      storage_class = "COLDLINE"
-    }
-  }
 
   lifecycle {
     prevent_destroy = false
@@ -187,26 +174,6 @@ resource "google_storage_bucket" "secondary-spam" {
   force_destroy = true
 
   uniform_bucket_level_access = true
-
-  lifecycle_rule {
-    condition {
-      age = 90
-    }
-    action {
-      type = "Delete"
-    }
-  }
-
-  lifecycle_rule {
-    condition {
-      age = 30
-    }
-    action {
-      type          = "SetStorageClass"
-      storage_class = "COLDLINE"
-    }
-  }
-
   lifecycle {
     prevent_destroy = false
   }
@@ -222,24 +189,6 @@ resource "google_storage_bucket" "secondary-spam" {
 
 # Model downloader job to fetch the secondary model from a Git repository
 # The job files are located in the `model-downloader` module.
-
-
-# Service account for the model downloader job.
-resource "google_service_account" "model_downloader_sa" {
-  account_id   = "model-downloader-sa"
-  display_name = "Model Downloader Service Account"
-  project      = var.project
-
-  # Ensure the IAM API is enabled before creating the service account.
-  depends_on = [google_project_service.project_apis]
-}
-
-# Grant the model downloader service account permission to write to the model storage bucket.
-resource "google_storage_bucket_iam_member" "model_downloader_gcs_writer" {
-  bucket = google_storage_bucket.model-store.name
-  role   = "roles/storage.objectAdmin"
-  member = "serviceAccount:${google_service_account.model_downloader_sa.email}"
-}
 
 
 # Module containing container build logic for the model downloader job.
@@ -308,6 +257,17 @@ resource "google_cloud_run_v2_job" "model_downloader_job" {
 # SERVICE ACCOUNTS & PERMISSIONS
 ###############################################
 
+# Service account for the model downloader job.
+resource "google_service_account" "model_downloader_sa" {
+  account_id   = "model-downloader-sa"
+  display_name = "Model Downloader Service Account"
+  project      = var.project
+
+  # Ensure the IAM API is enabled before creating the service account.
+  depends_on = [google_project_service.project_apis]
+}
+
+
 # Service account for the LLM stub service.
 resource "google_service_account" "llm_stub_sa" {
   account_id   = "llm-stub-sa"
@@ -323,6 +283,22 @@ resource "google_service_account" "sfilter_sa" {
   project      = var.project
   depends_on   = [google_project_service.project_apis]
 }
+
+#Service account for the bfilter service.
+resource "google_service_account" "bfilter_sa" {
+  account_id   = "bfilter-sa"
+  display_name = "BFilter Service Account"
+  project      = var.project
+  depends_on   = [google_project_service.project_apis]
+}
+
+# Grant the model downloader service account  permission to write to the model storage bucket.
+resource "google_storage_bucket_iam_member" "model_downloader_gcs_writer" {
+  bucket = google_storage_bucket.model-store.name
+  role   = "roles/storage.objectAdmin"
+  member = "serviceAccount:${google_service_account.model_downloader_sa.email}"
+}
+
 
 # Grant the sfilter service account read access to the model bucket.
 # This ensures the process within the container (running as this SA)
@@ -343,13 +319,6 @@ resource "google_storage_bucket_iam_member" "run_service_agent_gcs_mount_access"
   depends_on = [google_project_service.project_apis] # Ensures the Run API is enabled, which creates the service agent.
 }
 
-#Service account for the bfilter service.
-resource "google_service_account" "bfilter_sa" {
-  account_id   = "bfilter-sa"
-  display_name = "BFilter Service Account"
-  project      = var.project
-  depends_on   = [google_project_service.project_apis]
-}
 
 # Grant bfilter service account permission to invoke llm-stub service.
 resource "google_cloud_run_v2_service_iam_member" "bfilter_invokes_llmstub" {
@@ -375,6 +344,50 @@ resource "google_project_iam_member" "bfilter_pubsub_publisher" {
   role    = "roles/pubsub.publisher"
   member  = "serviceAccount:${google_service_account.bfilter_sa.email}"
 }
+
+# Grant the bfilter service account permission to publish to the secondary filter topic.
+resource "google_pubsub_topic_iam_member" "bfilter_publishes_to_secondary_filter" {
+  project = var.project
+  topic   = google_pubsub_topic.secondary_filter_topic.name
+  role    = "roles/pubsub.publisher"
+  member  = "serviceAccount:${google_service_account.bfilter_sa.email}"
+
+  depends_on = [google_pubsub_topic.secondary_filter_topic, google_service_account.bfilter_sa]
+}
+
+
+# Build permission to allow system pubsub service account to read from the secondary spam bucket.
+resource "google_storage_bucket_iam_member" "pubsub_to_bucket_reader" {
+  bucket = google_storage_bucket.secondary-spam.name
+  member = "serviceAccount:service-${data.google_project.project.number}@gcp-sa-pubsub.iam.gserviceaccount.com"
+  role   = "roles/storage.legacyBucketReader"
+
+    depends_on = [
+        google_storage_bucket.secondary-spam
+    ]
+}
+
+# Write permission to allow system pubsub service account to write to the secondary spam bucket.
+resource "google_storage_bucket_iam_member" "pubsub_to_bucket_creator" {
+  bucket = google_storage_bucket.secondary-spam.name
+  member = "serviceAccount:service-${data.google_project.project.number}@gcp-sa-pubsub.iam.gserviceaccount.com"
+  role   = "roles/storage.objectCreator"
+
+    depends_on = [
+        google_storage_bucket.secondary-spam
+    ]
+}
+
+# WARNING: This makes the bfilter-service publicly accessible to anyone on the internet.
+# Only use this if the service is explicitly designed for unauthenticated public access.
+resource "google_cloud_run_v2_service_iam_member" "bfilter_public_invoker" {
+  project  = var.project
+  location = var.region
+  name     = google_cloud_run_v2_service.bfilter-service.name
+  role     = "roles/run.invoker"
+  member   = "allUsers"
+}
+
 
 
 #################################################
@@ -576,17 +589,6 @@ resource "google_cloud_run_v2_service" "bfilter-service" {
 }
 
 
-# WARNING: This makes the bfilter-service publicly accessible to anyone on the internet.
-# Only use this if the service is explicitly designed for unauthenticated public access.
-resource "google_cloud_run_v2_service_iam_member" "bfilter_public_invoker" {
-  project  = var.project
-  location = var.region
-  name     = google_cloud_run_v2_service.bfilter-service.name
-  role     = "roles/run.invoker"
-  member   = "allUsers"
-}
-
-
 ##############################################
 #PUB-SUB CHANNEL
 ##############################################
@@ -600,37 +602,6 @@ resource "google_pubsub_topic" "secondary_filter_topic" {
   depends_on = [google_project_service.project_apis]
 }
 
-# Grant the bfilter service account permission to publish to the secondary filter topic.
-resource "google_pubsub_topic_iam_member" "bfilter_publishes_to_secondary_filter" {
-  project = var.project
-  topic   = google_pubsub_topic.secondary_filter_topic.name
-  role    = "roles/pubsub.publisher"
-  member  = "serviceAccount:${google_service_account.bfilter_sa.email}"
-
-  depends_on = [google_pubsub_topic.secondary_filter_topic, google_service_account.bfilter_sa]
-}
-
-
-
-resource "google_storage_bucket_iam_member" "pubsub_to_bucket_reader" {
-  bucket = google_storage_bucket.secondary-spam.name
-  member = "serviceAccount:service-${data.google_project.project.number}@gcp-sa-pubsub.iam.gserviceaccount.com"
-  role   = "roles/storage.legacyBucketReader"
-
-    depends_on = [
-        google_storage_bucket.secondary-spam
-    ]
-}
-
-resource "google_storage_bucket_iam_member" "pubsub_to_bucket_creator" {
-  bucket = google_storage_bucket.secondary-spam.name
-  member = "serviceAccount:service-${data.google_project.project.number}@gcp-sa-pubsub.iam.gserviceaccount.com"
-  role   = "roles/storage.objectCreator"
-
-    depends_on = [
-        google_storage_bucket.secondary-spam
-    ]
-}
 
 
 #ON PUB-SUB CHANNEL SUBSCRIBE TO secondary-filter-topic and write to secondary-spam
